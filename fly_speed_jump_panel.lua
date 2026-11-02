@@ -466,8 +466,38 @@ end
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "SpeedJumpFlyUI_Pro"
 screenGui.ResetOnSpawn = false
-screenGui.IgnoreGuiInset = true -- toạ độ tính trên toàn màn hình, vị trí ổn định hơn
+
+-- Đặt bảng điều khiển ở lớp thấp nhất trong PlayerGui.
+-- IgnoreGuiInset = false giúp tránh vùng thanh trên cùng của Roblox.
+screenGui.DisplayOrder = 0
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.IgnoreGuiInset = false
 screenGui.Parent = playerGui
+
+-- Đảm bảo các ScreenGui của game nằm phía trên bảng điều khiển,
+-- kể cả những GUI có DisplayOrder mặc định bằng 0.
+local function keepGameGuiAbove(gui)
+    if gui:IsA("ScreenGui") and gui ~= screenGui then
+        if gui.DisplayOrder <= screenGui.DisplayOrder then
+            gui.DisplayOrder = screenGui.DisplayOrder + 1
+        end
+    end
+end
+
+for _, gui in ipairs(playerGui:GetChildren()) do
+    keepGameGuiAbove(gui)
+end
+
+-- Áp dụng cho ScreenGui mà game tạo thêm trong lúc đang chơi.
+track(connections, playerGui.ChildAdded:Connect(function(gui)
+    if gui:IsA("ScreenGui") then
+        task.defer(function()
+            if gui.Parent == playerGui then
+                keepGameGuiAbove(gui)
+            end
+        end)
+    end
+end))
 
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
