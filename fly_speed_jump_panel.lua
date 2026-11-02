@@ -466,38 +466,29 @@ end
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "SpeedJumpFlyUI_Pro"
 screenGui.ResetOnSpawn = false
-
--- Đặt bảng điều khiển ở lớp thấp nhất trong PlayerGui.
--- IgnoreGuiInset = false giúp tránh vùng thanh trên cùng của Roblox.
-screenGui.DisplayOrder = 0
 screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-screenGui.IgnoreGuiInset = false
-screenGui.Parent = playerGui
 
--- Đảm bảo các ScreenGui của game nằm phía trên bảng điều khiển,
--- kể cả những GUI có DisplayOrder mặc định bằng 0.
-local function keepGameGuiAbove(gui)
-    if gui:IsA("ScreenGui") and gui ~= screenGui then
-        if gui.DisplayOrder <= screenGui.DisplayOrder then
-            gui.DisplayOrder = screenGui.DisplayOrder + 1
-        end
+-- Ưu tiên lớp hiển thị cao nhất cho bảng điều khiển.
+-- DisplayOrder chỉ xếp lớp giữa các ScreenGui cùng hệ thống; nó không tự
+-- vượt qua CoreGui của Roblox nếu vẫn parent vào PlayerGui.
+local MAX_DISPLAY_ORDER = 2147483647
+screenGui.DisplayOrder = MAX_DISPLAY_ORDER
+screenGui.IgnoreGuiInset = true
+
+-- Một số môi trường chạy script cung cấp gethui() để đặt giao diện vào
+-- lớp GUI riêng của executor. Nếu không có, dùng PlayerGui tiêu chuẩn.
+-- Lưu ý: gethui là API riêng của executor, không phải API Roblox chính thức.
+local overlayParent = playerGui
+local getHiddenUI = lookup("gethui") or lookup("get_hidden_gui") or lookup("gethiddengui")
+
+if getHiddenUI then
+    local ok, hiddenUI = pcall(getHiddenUI)
+    if ok and typeof(hiddenUI) == "Instance" then
+        overlayParent = hiddenUI
     end
 end
 
-for _, gui in ipairs(playerGui:GetChildren()) do
-    keepGameGuiAbove(gui)
-end
-
--- Áp dụng cho ScreenGui mà game tạo thêm trong lúc đang chơi.
-track(connections, playerGui.ChildAdded:Connect(function(gui)
-    if gui:IsA("ScreenGui") then
-        task.defer(function()
-            if gui.Parent == playerGui then
-                keepGameGuiAbove(gui)
-            end
-        end)
-    end
-end))
+screenGui.Parent = overlayParent
 
 local mainFrame = Instance.new("Frame")
 mainFrame.Name = "MainFrame"
