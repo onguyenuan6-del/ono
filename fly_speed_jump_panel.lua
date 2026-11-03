@@ -18,8 +18,8 @@ local playerGui = player:WaitForChild("PlayerGui")
 local CONFIG = {
 	DefaultFlySpeed = 50,
 	MinFlySpeed = 5,
-	MaxFlySpeed = 1000,
-	MaxMultiplier = 100,        -- giới hạn hệ số Speed / Jump
+	MaxFlySpeed = 99999999999,  -- giới hạn nhập Fly Speed (~100 tỷ)
+	MaxMultiplier = 99999999999, -- giới hạn nhập hệ số Speed / Jump (~100 tỷ)
 
 	AutoFlyOnRespawn = true,    -- chết xong hồi sinh -> fly tự bật lại (nếu lúc chết đang fly)
 	AlwaysFlyOnRespawn = false, -- true = hồi sinh LUÔN tự bật fly, dù trước đó không fly
@@ -757,9 +757,27 @@ loc(btnBack, "back", "←  ")
 ---------------------------------------------------------------------
 -- 2. LOGIC SPEED / JUMP / INFINITE JUMP + CẬP NHẬT UI
 ---------------------------------------------------------------------
+-- Đọc số từ ô nhập. Gõ 10000000000 hoặc 10.000.000.000 đều được
+-- (nhiều dấu chấm = dấu chấm phân cách hàng nghìn; 1 dấu chấm = số thập phân).
 local function parseNumber(text)
 	local clean = text:gsub("[^%d%.]", "")
+	local _, dots = clean:gsub("%.", "")
+	if dots > 1 then
+		clean = clean:gsub("%.", "")
+	end
 	return tonumber(clean)
+end
+
+-- Hiển thị số gọn, không có đuôi .0 và không bị chuyển thành 1e+10:
+-- 1.0 -> "1", 2.5 -> "2.5", 10000000000 -> "10000000000"
+local function formatNumber(n)
+	if n == math.floor(n) then
+		return string.format("%.0f", n)
+	end
+	local s = string.format("%.2f", n)
+	s = s:gsub("0+$", "")
+	s = s:gsub("%.$", "")
+	return s
 end
 
 -- Bước tăng/giảm: 0.5 khi <= 5, 1.0 khi lớn hơn
@@ -784,14 +802,14 @@ local function captureDefaults()
 end
 
 local function updateSpeedUI()
-	speedInput.Text = string.format("%.1fx", speedMultiplier)
+	speedInput.Text = formatNumber(speedMultiplier)
 	if humanoid then
 		humanoid.WalkSpeed = defaultSpeed * speedMultiplier
 	end
 end
 
 local function updateJumpUI()
-	jumpInput.Text = string.format("%.1fx", jumpMultiplier)
+	jumpInput.Text = formatNumber(jumpMultiplier)
 	if humanoid then
 		if humanoid.UseJumpPower then
 			humanoid.JumpPower = defaultJumpPower * jumpMultiplier
@@ -802,7 +820,7 @@ local function updateJumpUI()
 end
 
 local function updateFlySpeedUI()
-	flySpdInput.Text = tostring(math.round(currentFlySpeed))
+	flySpdInput.Text = formatNumber(math.round(currentFlySpeed))
 end
 
 local function updateAutoUI()
