@@ -414,8 +414,8 @@ local function SetFlatPlastic(enable)
 				end
 			end
 			for _, v in ipairs(workspace:GetDescendants()) do
-				if v:IsA("BasePart") and not isLucky(v) then
-					-- Bỏ qua body nhân vật / tool / accessory
+				if v:IsA("BasePart") and not isLucky(v) and v.MaterialVariant == "" then
+					-- Bỏ qua body nhân vật / tool trên tay
 					local skip = false
 					pcall(function()
 						local model = v:FindFirstAncestorOfClass("Model")
@@ -423,34 +423,27 @@ local function SetFlatPlastic(enable)
 						if v:FindFirstAncestorOfClass("Tool") or v:FindFirstAncestorOfClass("Accessory") then skip = true end
 					end)
 					if not skip then
-						if Backup.OriginalMaterials[v] == nil then
-							local mv = ""
-							pcall(function() mv = v.MaterialVariant end)
-							Backup.OriginalMaterials[v] = { Material = v.Material, MaterialVariant = mv }
-						end
-						pcall(function()
-							v.MaterialVariant = ""
-							v.Material = Enum.Material.SmoothPlastic
-						end)
+						if Backup.OriginalMaterials[v] == nil then Backup.OriginalMaterials[v] = v.Material end
+						v.Material = Enum.Material.SmoothPlastic
 					end
 				end
 			end
 		else
-			for part, data in pairs(Backup.OriginalMaterials) do
+			for part, mat in pairs(Backup.OriginalMaterials) do
 				if part and part.Parent then
 					pcall(function()
-						if type(data) == "table" then
-							part.Material = data.Material
-							if data.MaterialVariant ~= nil then part.MaterialVariant = data.MaterialVariant end
+						if type(mat) == "table" then
+							part.Material = mat.Material
+							if mat.MaterialVariant ~= nil then part.MaterialVariant = mat.MaterialVariant end
+							if mat.Reflectance ~= nil then part.Reflectance = mat.Reflectance end
 						else
-							-- legacy backup (chỉ Material)
-							part.Material = data
+							part.Material = mat
 						end
 					end)
 				end
 			end
 			for variant, tile in pairs(Backup.OriginalTile) do
-				if variant and variant.Parent then pcall(function() variant.StudsPerTile = tile end) end
+				if variant and variant.Parent then variant.StudsPerTile = tile end
 			end
 		end
 	end)
@@ -3416,7 +3409,7 @@ Connect(workspace.DescendantAdded, function(v)
 			if Backup.OriginalShadows[v] == nil then Backup.OriginalShadows[v] = v.CastShadow end
 			v.CastShadow = false
 		end
-		if Config.FlatPlastic and v:IsA("BasePart") and not isLucky(v) then
+		if Config.FlatPlastic and v:IsA("BasePart") and not isLucky(v) and v.MaterialVariant == "" then
 			local skip = false
 			pcall(function()
 				local model = v:FindFirstAncestorOfClass("Model")
@@ -3424,15 +3417,8 @@ Connect(workspace.DescendantAdded, function(v)
 				if v:FindFirstAncestorOfClass("Tool") or v:FindFirstAncestorOfClass("Accessory") then skip = true end
 			end)
 			if not skip then
-				if Backup.OriginalMaterials[v] == nil then
-					local mv = ""
-					pcall(function() mv = v.MaterialVariant end)
-					Backup.OriginalMaterials[v] = { Material = v.Material, MaterialVariant = mv }
-				end
-				pcall(function()
-					v.MaterialVariant = ""
-					v.Material = Enum.Material.SmoothPlastic
-				end)
+				if Backup.OriginalMaterials[v] == nil then Backup.OriginalMaterials[v] = v.Material end
+				v.Material = Enum.Material.SmoothPlastic
 			end
 		end
 		if Config.FlatHair then ApplyFlatHairObject(v) end
