@@ -414,8 +414,8 @@ local function SetFlatPlastic(enable)
 				end
 			end
 			for _, v in ipairs(workspace:GetDescendants()) do
-				if v:IsA("BasePart") and not isLucky(v) and v.MaterialVariant == "" then
-					-- Bỏ qua body nhân vật / tool trên tay
+				if v:IsA("BasePart") and not isLucky(v) then
+					-- Bỏ qua body nhân vật / tool / accessory
 					local skip = false
 					pcall(function()
 						local model = v:FindFirstAncestorOfClass("Model")
@@ -423,17 +423,34 @@ local function SetFlatPlastic(enable)
 						if v:FindFirstAncestorOfClass("Tool") or v:FindFirstAncestorOfClass("Accessory") then skip = true end
 					end)
 					if not skip then
-						if Backup.OriginalMaterials[v] == nil then Backup.OriginalMaterials[v] = v.Material end
-						v.Material = Enum.Material.SmoothPlastic
+						if Backup.OriginalMaterials[v] == nil then
+							local mv = ""
+							pcall(function() mv = v.MaterialVariant end)
+							Backup.OriginalMaterials[v] = { Material = v.Material, MaterialVariant = mv }
+						end
+						pcall(function()
+							v.MaterialVariant = ""
+							v.Material = Enum.Material.SmoothPlastic
+						end)
 					end
 				end
 			end
 		else
-			for part, mat in pairs(Backup.OriginalMaterials) do
-				if part and part.Parent then part.Material = mat end
+			for part, data in pairs(Backup.OriginalMaterials) do
+				if part and part.Parent then
+					pcall(function()
+						if type(data) == "table" then
+							part.Material = data.Material
+							if data.MaterialVariant ~= nil then part.MaterialVariant = data.MaterialVariant end
+						else
+							-- legacy backup (chỉ Material)
+							part.Material = data
+						end
+					end)
+				end
 			end
 			for variant, tile in pairs(Backup.OriginalTile) do
-				if variant and variant.Parent then variant.StudsPerTile = tile end
+				if variant and variant.Parent then pcall(function() variant.StudsPerTile = tile end) end
 			end
 		end
 	end)
@@ -1868,8 +1885,11 @@ TitleLabel.TextColor3 = Color3.fromRGB(255, 65, 80)
 TitleLabel.Font = Enum.Font.GothamBold
 TitleLabel.TextSize = 15
 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-TitleLabel.TextEditable = false
+TitleLabel.TextYAlignment = Enum.TextYAlignment.Center
+TitleLabel.TextWrapped = false
+TitleLabel.TextTruncate = Enum.TextTruncate.AtEnd
 TitleLabel.Active = false
+TitleLabel.Selectable = false
 TitleLabel.Parent = TitleBar
 
 local MinBtn = Instance.new("TextButton")
@@ -1911,7 +1931,7 @@ SearchBox.Parent = MainFrame
 Instance.new("UICorner", SearchBox).CornerRadius = UDim.new(0, 6)
 
 local Scroll = Instance.new("ScrollingFrame")
-Scroll.Size = UDim2.new(1, -20, 1, -145)
+Scroll.Size = UDim2.new(1, -20, 1, -150)
 Scroll.Position = UDim2.new(0, 10, 0, 88)
 Scroll.BackgroundColor3 = Color3.fromRGB(18, 7, 10)
 Scroll.BorderSizePixel = 0
@@ -1925,9 +1945,12 @@ UIList.SortOrder = Enum.SortOrder.LayoutOrder
 UIList.Parent = Scroll
 
 local BottomBar = Instance.new("Frame")
-BottomBar.Size = UDim2.new(1, -20, 0, 44)
-BottomBar.Position = UDim2.new(0, 10, 1, -50)
-BottomBar.BackgroundTransparency = 1
+BottomBar.Size = UDim2.new(1, -20, 0, 48)
+BottomBar.Position = UDim2.new(0, 10, 1, -54)
+BottomBar.BackgroundColor3 = Color3.fromRGB(15, 6, 9)
+BottomBar.BackgroundTransparency = 0
+BottomBar.BorderSizePixel = 0
+BottomBar.ZIndex = 5
 BottomBar.Parent = MainFrame
 
 local RestoreBtn = Instance.new("TextButton")
@@ -3227,7 +3250,7 @@ end)
 
 
 local function UpdateCanvas()
-	Scroll.CanvasSize = UDim2.new(0, 0, 0, UIList.AbsoluteContentSize.Y + 15)
+	Scroll.CanvasSize = UDim2.new(0, 0, 0, UIList.AbsoluteContentSize.Y + 28)
 end
 Connect(UIList:GetPropertyChangedSignal("AbsoluteContentSize"), UpdateCanvas)
 task.defer(UpdateCanvas)
@@ -3393,7 +3416,7 @@ Connect(workspace.DescendantAdded, function(v)
 			if Backup.OriginalShadows[v] == nil then Backup.OriginalShadows[v] = v.CastShadow end
 			v.CastShadow = false
 		end
-		if Config.FlatPlastic and v:IsA("BasePart") and not isLucky(v) and v.MaterialVariant == "" then
+		if Config.FlatPlastic and v:IsA("BasePart") and not isLucky(v) then
 			local skip = false
 			pcall(function()
 				local model = v:FindFirstAncestorOfClass("Model")
@@ -3401,8 +3424,15 @@ Connect(workspace.DescendantAdded, function(v)
 				if v:FindFirstAncestorOfClass("Tool") or v:FindFirstAncestorOfClass("Accessory") then skip = true end
 			end)
 			if not skip then
-				if Backup.OriginalMaterials[v] == nil then Backup.OriginalMaterials[v] = v.Material end
-				v.Material = Enum.Material.SmoothPlastic
+				if Backup.OriginalMaterials[v] == nil then
+					local mv = ""
+					pcall(function() mv = v.MaterialVariant end)
+					Backup.OriginalMaterials[v] = { Material = v.Material, MaterialVariant = mv }
+				end
+				pcall(function()
+					v.MaterialVariant = ""
+					v.Material = Enum.Material.SmoothPlastic
+				end)
 			end
 		end
 		if Config.FlatHair then ApplyFlatHairObject(v) end
