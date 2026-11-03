@@ -21,6 +21,7 @@ local LocalPlayer = Players.LocalPlayer
 -- Quản lý mọi kết nối để nút X có thể dừng script hoàn toàn.
 local IsRunning = true
 local Connections = {}
+-- Stop a previous V7.x instance before taking a fresh graphics baseline.
 pcall(function()
 	local previous = shared.VampireOptimizerRuntime
 	if type(previous) == "table" and type(previous.Stop) == "function" then previous.Stop() end
@@ -32,8 +33,10 @@ pcall(function()
 		if type(previous) == "table" and type(previous.Stop) == "function" then previous.Stop() end
 	end
 end)
+-- A fresh manual run clears the 'user pressed X' flag that stops the post-teleport bootstrap.
 pcall(function() shared.VampireOptimizerDisabled = nil end)
 pcall(function() if type(getgenv) == "function" then getgenv().VampireOptimizerDisabled = nil end end)
+-- Set only by the post-teleport bootstrap. Read once and cleared so a later manual run opens the menu normally.
 local IsReloadRun = false
 pcall(function() if shared.VampireOptimizerReload == true then IsReloadRun = true end end)
 pcall(function() if type(getgenv) == "function" and getgenv().VampireOptimizerReload == true then IsReloadRun = true end end)
@@ -50,6 +53,8 @@ local function Connect(signal, callback)
 end
 
 -- ==================== ĐA NGÔN NGỮ TỰ ĐỘNG THEO ROBLOX ====================
+-- Ưu tiên Player.LocaleId (ngôn ngữ tài khoản dùng cho nội dung trong trải nghiệm),
+-- sau đó dùng LocalizationService.RobloxLocaleId (ngôn ngữ CoreGui).
 local function ReadLocale()
 	local locale = nil
 	pcall(function() locale = LocalPlayer.LocaleId end)
@@ -381,6 +386,7 @@ local Lang = {
 	},
 }
 
+-- Bổ sung bản dịch cho các thẻ mới V6.4 để menu tiếp tục theo ngôn ngữ Roblox.
 local FeatureTranslations = {
 	ar = { HairFlatTitle="شعر بلون موحد", HairFlatDesc="إزالة خامات ملحقات الشعر مع الاحتفاظ باللون الأصلي؛ قابل للاستعادة", AutoSaveTitle="حفظ الإعدادات تلقائياً", AutoSaveDesc="يحفظ بعد التغييرات ويتطلب دعم كتابة الملفات", JoinPlayerTitle="الانضمام إلى خادم لاعب", JoinPlayerDesc="لا يستطيع العميل معرفة JobId للاعب في تجربة شخص آخر؛ استخدم خيار الانضمام الرسمي عند السماح", JoinPlayerStatus="يتطلب صلاحية الخادم — الانضمام التلقائي غير متاح هنا" },
 	zhCN = { HairFlatTitle="头发纯色化", HairFlatDesc="移除头发配件纹理并保留原色；可恢复", AutoSaveTitle="自动保存设置", AutoSaveDesc="更改后自动保存，需要执行环境支持写文件", JoinPlayerTitle="加入玩家所在服务器", JoinPlayerDesc="在他人的游戏中，客户端无法查询其他玩家的 JobId；允许时请使用 Roblox 官方加入选项", JoinPlayerStatus="需要服务器权限 — 当前客户端版本不支持自动加入" },
@@ -404,6 +410,7 @@ for locale, entries in pairs(FeatureTranslations) do
 	end
 end
 
+-- Nếu tài khoản dùng ngôn ngữ chưa có bản dịch trong script, thử ngôn ngữ CoreGui rồi mới về English.
 if not Lang[currentLocale] then
 	local coreLocale = string.lower((LocalizationService.RobloxLocaleId or "en-us"):gsub("_", "-"))
 	local coreBase = coreLocale:match("^([a-z]+)") or "en"
@@ -469,6 +476,7 @@ for _, obj in ipairs(Lighting:GetChildren()) do
 	end
 end
 
+-- Persistent executor environment. It preserves settings between reinjections even when file APIs are unavailable.
 local PersistentEnv = shared
 pcall(function()
 	if type(getgenv) == "function" then
@@ -510,6 +518,7 @@ local function StoreConfigInMemory()
 end
 
 local function LoadConfig()
+	-- Memory fallback first; file data, when available, is the durable source of truth.
 	pcall(function() MergeConfigTable(PersistentEnv.VampireOptimizerConfig) end)
 	pcall(function() MergeConfigTable(shared.VampireOptimizerConfig) end)
 	if type(readfile) ~= "function" or type(isfile) ~= "function" then return end
@@ -553,6 +562,7 @@ end
 
 LoadConfig()
 
+-- Chuẩn hóa dữ liệu config cũ/hỏng trước khi dùng cho các thanh trượt.
 Config.FxScale = math.clamp(math.floor(tonumber(Config.FxScale) or 100), 0, 100)
 Config.RenderDistance = math.clamp(math.floor(tonumber(Config.RenderDistance) or 100000), 200, 100000)
 if tostring(Config.EngineQuality):upper() == "AUTO" then
@@ -565,7 +575,7 @@ Config.RemoveTextures = Config.RemoveTextures == true
 Config.RemoveShadows = Config.RemoveShadows == true
 Config.LiteTerrain = Config.LiteTerrain == true
 Config.AreaMonitor = Config.AreaMonitor == true
-Config.FlatHair = true
+Config.FlatHair = true -- V7.3 starts with solid-colour SmoothPlastic hair enabled.
 Config.HairSolid = Config.HairSolid ~= false
 Config.TeleportPersist = Config.TeleportPersist ~= false
 Config.ReloadUrl = (type(Config.ReloadUrl) == "string") and Config.ReloadUrl or ""
@@ -583,6 +593,7 @@ local function isLucky(obj)
 	return false
 end
 
+-- 1. Làm phẳng vật liệu (Nhựa)
 local function SetFlatPlastic(enable)
 	Config.FlatPlastic = enable
 	if enable then
@@ -609,6 +620,7 @@ local function SetFlatPlastic(enable)
 	QueueAutoSave()
 end
 
+-- 2. Xóa Texture & Decals
 local function SetRemoveTextures(enable)
 	Config.RemoveTextures = enable
 	for _, v in ipairs(workspace:GetDescendants()) do
@@ -625,6 +637,7 @@ local function SetRemoveTextures(enable)
 	QueueAutoSave()
 end
 
+-- 3. Xóa bóng đổ
 local function SetRemoveShadows(enable)
 	Config.RemoveShadows = enable
 	Lighting.GlobalShadows = enable and false or Backup.Lighting.GlobalShadows
@@ -642,6 +655,7 @@ local function SetRemoveShadows(enable)
 	QueueAutoSave()
 end
 
+-- 4. Thanh trượt giảm hiệu ứng (0% - 100%)
 local function ApplyFxScale(pct)
 	pct = math.clamp(pct, 0, 100)
 	Config.FxScale = pct
@@ -687,30 +701,40 @@ local function ApplyFxScale(pct)
 	QueueAutoSave()
 end
 
+-- 5. Giới hạn khoảng cách Render (Render Distance Limiter)
 local function SetRenderDistance(dist)
+	-- Đây là khoảng sương mù của Lighting, KHÔNG phải khoảng cách tải/render của engine.
 	dist = math.clamp(math.floor(tonumber(dist) or 100000), 200, 100000)
 	Config.RenderDistance = dist
+
 	Lighting.FogStart = dist
 	Lighting.FogEnd = dist + math.max(1000, math.floor(dist * 0.1))
 	Lighting.FogColor = Backup.Lighting.FogColor
 	QueueAutoSave()
 end
 
+-- 6. Cấp độ đồ họa Engine Roblox Studio (Thay thế FFlag)
 local function SetEngineQualityLevel(lvl)
 	if tostring(lvl):upper() == "AUTO" then
 		Config.EngineQuality = "AUTO"
-		pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic end)
+		pcall(function()
+			settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic
+		end)
 		Lighting.EnvironmentDiffuseScale = Backup.Lighting.EnvironmentDiffuseScale
 		Lighting.EnvironmentSpecularScale = Backup.Lighting.EnvironmentSpecularScale
 		QueueAutoSave()
 		return
 	end
+
 	lvl = math.clamp(math.floor(tonumber(lvl) or 1), 1, 21)
 	Config.EngineQuality = lvl
+
 	pcall(function()
 		local enumName = string.format("Level%02d", lvl)
 		settings().Rendering.QualityLevel = Enum.QualityLevel[enumName]
 	end)
+
+	-- Tối ưu thêm ánh sáng môi trường PBR
 	if lvl <= 5 then
 		Lighting.EnvironmentDiffuseScale = 0
 		Lighting.EnvironmentSpecularScale = 0
@@ -721,6 +745,7 @@ local function SetEngineQualityLevel(lvl)
 	QueueAutoSave()
 end
 
+-- 7. Tối ưu địa hình
 local function SetLiteTerrain(enable)
 	Config.LiteTerrain = enable
 	local terrain = workspace:FindFirstChildOfClass("Terrain")
@@ -743,7 +768,9 @@ local function SetLiteTerrain(enable)
 	QueueAutoSave()
 end
 
--- ==================== HAIR PIPELINE ====================
+-- 8. TÓC SMOOTHPLASTIC, GIỮ NGUYÊN TOÀN BỘ MÀU/TEXTURE GỐC (CHỈ HIỂN THỊ TRÊN CLIENT)
+-- Không gán một màu cố định, không xóa TextureID, SurfaceAppearance, Texture hoặc Decal.
+-- Nhờ vậy tóc đen/vàng/đỏ/xanh/nhiều màu vẫn giữ hình thức màu gốc của từng người.
 local function IsHairAccessory(accessory)
     if not accessory or not accessory:IsA("Accessory") then return false end
     local isHair = false
@@ -777,10 +804,15 @@ local function FindHairAccessory(obj)
     return nil
 end
 
+-- ---------- V7.3 solid-colour plastic hair ----------
+-- Pipeline per hair part:
+--   1. immediately: SmoothPlastic, no reflectance, no PBR maps (normal / metalness / roughness)
+--   2. asynchronously: find ONE colour (texture average x tint) and, if found, strip the texture so the hair is a single flat plastic colour
+--   3. colour unknown: keep the texture (never invent a colour) and report the part as "flattened only"
 Backup.OriginalHairDecals = Backup.OriginalHairDecals or {}
-local HairPartState = {}
-local HairColorCache = {}
-local HairColorInflight = {}
+local HairPartState = {}     -- [part] = "pending" | "solid" | "flat"
+local HairColorCache = {}    -- [textureId] = Color3 (successful samples only)
+local HairColorInflight = {} -- [textureId] = true while downloading/reading
 
 local HAIR_PLACEHOLDER_COLORS = { Color3.fromRGB(163, 162, 165), Color3.fromRGB(255, 255, 255) }
 local function IsPlaceholderHairColor(color)
@@ -796,6 +828,7 @@ local function MultiplyColors(a, b)
     return Color3.new(a.R * b.R, a.G * b.G, a.B * b.B)
 end
 
+-- Average colour of a texture via EditableImage. Returns nil when the executor/experience does not allow it.
 local function SampleTextureColor(textureId)
     if type(textureId) ~= "string" or textureId == "" then return nil end
     if HairColorCache[textureId] then return HairColorCache[textureId] end
@@ -830,6 +863,7 @@ local function SampleTextureColor(textureId)
             width, height = math.max(1, math.floor(size.X)), math.max(1, math.floor(size.Y))
         end)
         if width * height > 1024 then
+            -- Down-scaling first averages the pixels for us and keeps the read cheap.
             local resized = pcall(function() image:Resize(Vector2.new(32, 32)) end)
             if resized then width, height = 32, 32 end
         end
@@ -885,6 +919,7 @@ local function SampleTextureColor(textureId)
     return resultColor
 end
 
+-- Everything on a part that can carry the hair's visible texture.
 local function CollectHairTextureSources(part)
     local info = { textureIds = {}, surfaces = {}, meshes = {}, decals = {}, surfaceTint = nil }
     if part:IsA("MeshPart") then
@@ -916,6 +951,7 @@ local function CollectHairTextureSources(part)
     return info
 end
 
+-- Step 1 (instant): plastic look + strip PBR detail. Texture colour is still untouched here.
 local function FlattenHairSurfaces(info)
     for _, surface in ipairs(info.surfaces) do
         if Backup.OriginalHairSurface[surface] == nil then
@@ -931,6 +967,7 @@ local function FlattenHairSurfaces(info)
     end
 end
 
+-- Step 2: swap the textured look for ONE flat colour.
 local function StripHairTextures(part, info, finalColor)
     if part:IsA("MeshPart") then
         pcall(function() part.TextureID = "" end)
@@ -944,7 +981,7 @@ local function StripHairTextures(part, info, finalColor)
         pcall(function() mesh.TextureId = "" end)
     end
     for _, surface in ipairs(info.surfaces) do
-        pcall(function() surface.Parent = nil end)
+        pcall(function() surface.Parent = nil end) -- kept alive in Backup so it can be put back
     end
     for _, decal in ipairs(info.decals) do
         if Backup.OriginalHairDecals[decal] == nil then
@@ -1007,14 +1044,14 @@ local function ApplyFlatHairPart(part)
             if tintIsReal then finalColor = MultiplyColors(finalColor, tint) end
             if info.surfaceTint then finalColor = MultiplyColors(finalColor, info.surfaceTint) end
         elseif tintIsReal then
-            finalColor = tint
+            finalColor = tint -- no readable texture, but the part itself carries the hair colour
         end
 
         if finalColor then
             StripHairTextures(part, info, finalColor)
             HairPartState[part] = "solid"
         else
-            HairPartState[part] = "flat"
+            HairPartState[part] = "flat" -- colour unknown: keep the texture rather than invent a colour
         end
     end)
 end
@@ -1088,6 +1125,7 @@ local function RestoreHairAppearance()
     HairPartState = {}
 end
 
+-- Retry parts that ended up "flat" or never finished; solid parts are left alone (their texture is already gone).
 local function RescanHair()
     for part, state in pairs(HairPartState) do
         if state ~= "solid" then HairPartState[part] = nil end
@@ -1115,6 +1153,7 @@ local function SetFlatHair(enable)
     QueueAutoSave()
 end
 
+-- Tự áp dụng cho nhân vật hiện tại, người mới vào, respawn và tóc được thêm/stream sau.
 local function HookPlayerHair(player)
     local function onCharacter(character)
         task.defer(function()
@@ -1129,7 +1168,7 @@ end
 for _, player in ipairs(Players:GetPlayers()) do HookPlayerHair(player) end
 Connect(Players.PlayerAdded, HookPlayerHair)
 
--- ==================== SKY ====================
+-- 9. Quản lý Bầu Trời (Galaxy Vũ Trụ & Sky Gốc)
 local customSkyInst = nil
 
 local function ApplySkyMode(mode)
@@ -1165,9 +1204,10 @@ local function ApplySkyMode(mode)
 	customSkyInst.SkyboxLf = "rbxassetid://159454286"
 	customSkyInst.SkyboxRt = "rbxassetid://159454300"
 	customSkyInst.SkyboxUp = spaceUp
-	customSkyInst.SkyboxDn = spaceUp
+	customSkyInst.SkyboxDn = spaceUp -- Dùng chung texture vũ trụ để loại bỏ hoàn toàn viền xanh
 end
 
+-- 10. Khôi Phục Toàn Bộ Đồ Họa Gốc 100%
 local function RestoreAllGraphics()
 	SetFlatPlastic(false)
 	SetRemoveTextures(false)
@@ -1195,12 +1235,14 @@ local function RestoreAllGraphics()
 	Config.RenderDistance = math.clamp(math.floor(Backup.Lighting.FogEnd), 200, 100000)
 end
 
--- ==================== UI ====================
+-- ==================== GIAO DIỆN NGƯỜI DÙNG (UI GOTHIC VAMPIRE) ====================
+
 local ParentTarget = nil
 pcall(function() if type(gethui) == "function" then ParentTarget = gethui() end end)
 if not ParentTarget then pcall(function() ParentTarget = game:GetService("CoreGui") end) end
 if not ParentTarget then ParentTarget = LocalPlayer:WaitForChild("PlayerGui") end
 
+-- Clean up stale V6/V7 windows before creating a fresh pair.
 for _, oldName in ipairs({
 	"VampireOptimizer_GUI_V6_8", "VampireOptimizer_GUI_V7_2",
 	"VampireOptimizer_Float_V7_2"
@@ -1220,6 +1262,8 @@ ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
 ScreenGui.Enabled = true
 ScreenGui.Parent = ParentTarget
 
+-- The floating button lives in a separate, higher DisplayOrder ScreenGui.
+-- It remains clickable even when the main window overlaps it.
 local ToggleGui = Instance.new("ScreenGui")
 ToggleGui.Name = "VampireOptimizer_Float_V7_2"
 ToggleGui.DisplayOrder = 2147483001
@@ -1229,6 +1273,7 @@ ToggleGui.ZIndexBehavior = Enum.ZIndexBehavior.Global
 ToggleGui.Enabled = true
 ToggleGui.Parent = ParentTarget
 
+-- NÚT NỔI LUÔN HIỂN THỊ
 local ToggleButton = Instance.new("TextButton")
 ToggleButton.Name = "FloatingVampireVectorIcon"
 ToggleButton.Size = UDim2.new(0, 52, 0, 52)
@@ -1281,6 +1326,7 @@ CrownBadge.TextSize = 10
 CrownBadge.ZIndex = 1003
 CrownBadge.Parent = ToggleButton
 
+-- KHUNG MENU CHÍNH
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainWindow"
 MainFrame.Size = UDim2.new(0, 440, 0, 550)
@@ -1301,6 +1347,7 @@ MainBorder.Color = Color3.fromRGB(190, 25, 40)
 MainBorder.Thickness = 2
 MainBorder.Parent = MainFrame
 
+-- THANH TIÊU ĐỀ
 local TitleBar = Instance.new("Frame")
 TitleBar.Size = UDim2.new(1, 0, 0, 42)
 TitleBar.BackgroundColor3 = Color3.fromRGB(28, 8, 12)
@@ -1346,11 +1393,12 @@ CloseBtn.Selectable = true
 CloseBtn.Parent = TitleBar
 Instance.new("UICorner", CloseBtn).CornerRadius = UDim.new(0, 6)
 
+-- THANH TÌM KIẾM (Đã sửa lỗi hiện chữ TextBox)
 local SearchBox = Instance.new("TextBox")
 SearchBox.Size = UDim2.new(1, -20, 0, 32)
 SearchBox.Position = UDim2.new(0, 10, 0, 48)
 SearchBox.BackgroundColor3 = Color3.fromRGB(25, 10, 14)
-SearchBox.Text = ""
+SearchBox.Text = "" -- Xóa sạch văn bản mặc định
 SearchBox.PlaceholderText = T("Search")
 SearchBox.PlaceholderColor3 = Color3.fromRGB(150, 80, 90)
 SearchBox.TextColor3 = Color3.fromRGB(255, 230, 230)
@@ -1360,6 +1408,7 @@ SearchBox.ClearTextOnFocus = false
 SearchBox.Parent = MainFrame
 Instance.new("UICorner", SearchBox).CornerRadius = UDim.new(0, 6)
 
+-- VÙNG CUỘN
 local Scroll = Instance.new("ScrollingFrame")
 Scroll.Size = UDim2.new(1, -20, 1, -145)
 Scroll.Position = UDim2.new(0, 10, 0, 88)
@@ -1374,6 +1423,7 @@ UIList.Padding = UDim.new(0, 8)
 UIList.SortOrder = Enum.SortOrder.LayoutOrder
 UIList.Parent = Scroll
 
+-- KHU VỰC NÚT DƯỚI CÙNG
 local BottomBar = Instance.new("Frame")
 BottomBar.Size = UDim2.new(1, -20, 0, 44)
 BottomBar.Position = UDim2.new(0, 10, 1, -50)
@@ -1401,6 +1451,7 @@ SaveBtn.TextSize = 13
 SaveBtn.Parent = BottomBar
 Instance.new("UICorner", SaveBtn).CornerRadius = UDim.new(0, 6)
 
+-- ==================== CÁC CARD TÍNH NĂNG ====================
 local allCards = {}
 
 local function CreateToggleCard(id, titleText, descText, defaultState, callback)
@@ -1462,6 +1513,7 @@ local function CreateToggleCard(id, titleText, descText, defaultState, callback)
 	end
 end
 
+-- THẺ TÓC MỘT MÀU THEO MÀU GỐC (V7.3)
 local function CreateHairColorCard()
     local Card = Instance.new("Frame")
     Card.Name = "HairColor SolidPlastic KeepOriginalPalette"
@@ -1567,6 +1619,7 @@ local function CreateHairColorCard()
         ScheduleStats()
     end)
 
+    -- Initial scan result shows up a few seconds after the script starts.
     ScheduleStats()
 
     table.insert(allCards, Card)
@@ -1579,6 +1632,7 @@ local function CreateHairColorCard()
     end
 end
 
+-- THANH TRƯỢT GIẢM HIỆU ỨNG (0% - 100%)
 local function CreateFxSliderCard()
 	local Card = Instance.new("Frame")
 	Card.Name = "FxSlider " .. T("FxScaleTitle")
@@ -1680,6 +1734,7 @@ local function CreateFxSliderCard()
 	end
 end
 
+-- THANH ĐIỀU CHỈNH KHOẢNG SƯƠNG MÙ (KHÔNG PHẢI ENGINE RENDER DISTANCE)
 local function CreateRenderDistanceCard()
 	local Card = Instance.new("Frame")
 	Card.Name = "RenderDist " .. T("RenderDistTitle")
@@ -1782,6 +1837,7 @@ local function CreateRenderDistanceCard()
 	end
 end
 
+-- THANH CẤP ĐỘ ĐỒ HỌA STUDIO (LEVEL 1 -> 21) THAY THẾ CHO FFLAG
 local function CreateEngineQualityCard()
 	local Card = Instance.new("Frame")
 	Card.Name = "EngineQuality " .. T("EngineQualityTitle")
@@ -1897,6 +1953,7 @@ local function CreateEngineQualityCard()
 	end
 end
 
+-- THẺ BẦU TRỜI: CHỈ CÒN GALAXY VŨ TRỤ VÀ SKY GỐC CỦA GAME (Đã bỏ hẳn Sky Xám)
 local function CreateSkyCard()
 	local Card = Instance.new("Frame")
 	Card.Name = "SkyControl " .. T("SkyTitle")
@@ -1962,6 +2019,13 @@ local function CreateSkyCard()
 	return function() UpdateSkyButtons("Default") end
 end
 
+-- LƯU Ý: Không có nút TP theo server người chơi ở bản client-only.
+-- Việc tìm JobId của người khác và chuyển server phải qua luồng Roblox/server được cấp quyền;
+-- script client trong game của người khác không thể tự cấp quyền hoặc vượt cài đặt riêng tư.
+
+-- ==================== KIỂM TRA MỞ RỘNG MAP / THEO DÕI VÙNG ĐÃ STREAM ====================
+-- Trong game người khác, client không thể yêu cầu server tăng Streaming radius.
+-- Card này báo rõ script không mở rộng Streaming; chỉ đếm BasePart đã có mặt ở client quanh nhân vật.
 local AreaStatusLabel = nil
 local AreaMonitorButton = nil
 local AreaMonitorEnabled = Config.AreaMonitor
@@ -2124,6 +2188,8 @@ local function CreateAreaMonitorCard()
 	return function() end
 end
 
+-- ==================== ĐĂNG KÝ VÀ KHỞI TẠO TẤT CẢ CÁC NÚT ====================
+
 local syncPlast = CreateToggleCard("FlatPlastic", T("FlatPlastic"), T("FlatPlasticDesc"), Config.FlatPlastic, function(s) SetFlatPlastic(s) end)
 local syncTex = CreateToggleCard("RemoveTextures", T("RemoveTextures"), T("RemoveTexturesDesc"), Config.RemoveTextures, function(s) SetRemoveTextures(s) end)
 local syncShad = CreateToggleCard("RemoveShadows", T("RemoveShadows"), T("RemoveShadowsDesc"), Config.RemoveShadows, function(s) SetRemoveShadows(s) end)
@@ -2144,33 +2210,9 @@ local syncTeleportPersist = CreateToggleCard("TeleportPersist", T("TeleportPersi
 	QueueAutoSave()
 end)
 
--- ==================== TELEPORT PERSIST (CẢI TIẾN: HOOK + IN-MEMORY SOURCE) ====================
-local RELOAD_FILE_NAME = "VampireOptimizer_V7_3.lua"
-local TeleportQueued = false
-local TeleportWarned = false
-
--- (1) Cố gắng nắm bắt source hiện tại để dùng làm nguồn reload khi teleport.
--- Ưu tiên: source từ file nếu script được nạp từ đường dẫn file (debug.getinfo trả về "@path").
--- Nếu là string chunk (loadstring) thì có thể không lấy được source đầy đủ.
-do
-    local ok, info = pcall(function() return debug.getinfo(1, "S") end)
-    if ok and type(info) == "table" and type(info.source) == "string" then
-        local src = info.source
-        if src:sub(1, 1) == "@" then
-            local path = src:sub(2)
-            local okRead = pcall(function()
-                if type(isfile) == "function" and type(readfile) == "function" and isfile(path) then
-                    local content = readfile(path)
-                    if type(content) == "string" and #content > 200 then
-                        shared.VampireOptimizerSource = content
-                        pcall(function() PersistentEnv.VampireOptimizerSource = content end)
-                    end
-                end
-            end)
-        end
-    end
-end
-
+-- ==================== RANDOM PUBLIC SERVER HOP ====================
+-- Reads the public server directory and requests a different public instance.
+-- TeleportToPlaceInstance is a legacy client API; Roblox may still reject a join.
 local function ResolveQueueOnTeleport()
 	local candidates = {}
 	pcall(function() if type(queue_on_teleport) == "function" then table.insert(candidates, queue_on_teleport) end end)
@@ -2190,164 +2232,6 @@ local function ResolveQueueOnTeleport()
 	return candidates[1]
 end
 
-local function QueueReinjectIfConfigured(reason)
-	if Config.TeleportPersist == false then return false, "Re-run after teleport is OFF" end
-	if TeleportQueued then return true, "already queued" end
-
-	local rawUrl = tostring(Config.ReloadUrl or ""):gsub("^%s*(.-)%s*$", "%1")
-	local hasLocalFile = false
-	pcall(function()
-		hasLocalFile = type(isfile) == "function" and type(readfile) == "function" and isfile(RELOAD_FILE_NAME) == true
-	end)
-	local hasSharedSource = type(shared.VampireOptimizerSource) == "string" and #shared.VampireOptimizerSource > 200
-
-	if rawUrl == "" and not hasLocalFile and not hasSharedSource then
-		return false, "No reload source: set a raw URL, save " .. RELOAD_FILE_NAME .. ", or capture in-memory source"
-	end
-
-	local queueFn = ResolveQueueOnTeleport()
-	if type(queueFn) ~= "function" then return false, "Executor has no queue_on_teleport" end
-
-	local okJson, configJson = pcall(function() return HttpService:JSONEncode(Config) end)
-	if not okJson then return false, "Could not encode saved settings" end
-
-	-- Bootstrap: ưu tiên in-memory source (shared), rồi URL, cuối cùng là file.
-	-- Có shared source giúp reload ổn định khi không có mạng hoặc URL chết.
-	local bootstrap = string.format([[
-local configJson, reloadUrl, reloadFile = %q, %q, %q
-if not game:IsLoaded() then game.Loaded:Wait() end
-local Players = game:GetService("Players")
-while not Players.LocalPlayer do task.wait() end
-task.wait(1.5)
-local env = shared
-pcall(function() if type(getgenv) == "function" then env = getgenv() end end)
-if shared.VampireOptimizerDisabled or env.VampireOptimizerDisabled then return end
-pcall(function()
-  local cfg = game:GetService("HttpService"):JSONDecode(configJson)
-  shared.VampireOptimizerConfig = cfg
-  env.VampireOptimizerConfig = cfg
-end)
-local source = nil
-if type(shared.VampireOptimizerSource) == "string" and #shared.VampireOptimizerSource > 200 then
-    source = shared.VampireOptimizerSource
-end
-if (not source) and type(env.VampireOptimizerSource) == "string" and #env.VampireOptimizerSource > 200 then
-    source = env.VampireOptimizerSource
-end
-if not source and reloadUrl ~= "" then
-  local ok, body = pcall(function() return game:HttpGet(reloadUrl, true) end)
-  if ok and type(body) == "string" and body ~= "" then source = body end
-end
-if not source and reloadFile ~= "" and type(isfile) == "function" and type(readfile) == "function" then
-  local ok, body = pcall(function() if isfile(reloadFile) then return readfile(reloadFile) end end)
-  if ok and type(body) == "string" and body ~= "" then source = body end
-end
-if not source then warn("[Vampire Optimizer] No reload source available after teleport") return end
-local chunk, compileError = loadstring(source)
-if not chunk then warn(compileError) return end
-shared.VampireOptimizerReload = true
-pcall(function() env.VampireOptimizerReload = true end)
-local ran, runError = pcall(chunk)
-if not ran then warn(runError) end
-]], configJson, rawUrl, RELOAD_FILE_NAME)
-
-	local queued, queueErr = pcall(queueFn, bootstrap)
-	if not queued then return false, tostring(queueErr) end
-	TeleportQueued = true
-	return true, reason or "queued"
-end
-
-local function EnsureQueuedBeforeTeleport()
-	-- Fire-and-forget, không throw lỗi vào caller.
-	pcall(QueueReinjectIfConfigured, "pre-teleport-hook")
-end
-
-local function DescribeExecutor()
-	local name = "unknown executor"
-	pcall(function() if type(identifyexecutor) == "function" then name = tostring((identifyexecutor())) end end)
-	local function yn(value) return value and "OK" or "NO" end
-	local hasQueue = type(ResolveQueueOnTeleport()) == "function"
-	local hasFiles = type(readfile) == "function" and type(writefile) == "function" and type(isfile) == "function"
-	local hasHttp = type(request) == "function" or type(http_request) == "function"
-	pcall(function() if type(game.HttpGet) == "function" then hasHttp = true end end)
-	local hasHook = type(hookfunction) == "function" or type(hookfunc) == "function"
-	local hasSource = type(shared.VampireOptimizerSource) == "string" and #shared.VampireOptimizerSource > 200
-	return string.format("%s | queue: %s | files: %s | http: %s | hook: %s | source: %s",
-		name, yn(hasQueue), yn(hasFiles), yn(hasHttp), yn(hasHook), yn(hasSource))
-end
-local ExecutorReport = DescribeExecutor()
-pcall(function() print("[Vampire Optimizer] " .. ExecutorReport) end)
-
--- (2) HOOK TeleportService để queue_on_teleport được gọi TRƯỚC khi Roblox bắt đầu teleport.
---     Đây là điểm khác biệt so với OnTeleport (vốn có thể fire quá muộn).
-local function GetHookFunction()
-	if type(hookfunction) == "function" then return hookfunction end
-	if type(hookfunc) == "function" then return hookfunc end
-	local got
-	pcall(function()
-		if type(getgenv) == "function" then
-			local env = getgenv()
-			if type(env) == "table" then
-				if type(env.hookfunction) == "function" then got = env.hookfunction
-				elseif type(env.hookfunc) == "function" then got = env.hookfunc end
-			end
-		end
-	end)
-	return got
-end
-
-local function TryHookTeleportService()
-	local hookFn = GetHookFunction()
-	if type(hookFn) ~= "function" then return false, "hookfunction not available" end
-
-	local hooked = 0
-	local function InstallHook(target, label)
-		if type(target) ~= "function" then return end
-		local ok = pcall(function()
-			local original
-			original = hookFn(target, function(...)
-				EnsureQueuedBeforeTeleport()
-				return original(...)
-			end)
-		end)
-		if ok then hooked += 1 end
-	end
-
-	InstallHook(TeleportService.Teleport, "Teleport")
-	InstallHook(TeleportService.TeleportToPlaceInstance, "TeleportToPlaceInstance")
-	pcall(function() InstallHook(TeleportService.TeleportAsync, "TeleportAsync") end)
-	pcall(function() InstallHook(TeleportService.TeleportToPrivateServer, "TeleportToPrivateServer") end)
-
-	if hooked > 0 then
-		return true, "hooked " .. tostring(hooked) .. " TeleportService method(s)"
-	end
-	return false, "no TeleportService method was hookable"
-end
-
-local hookOk, hookMessage = TryHookTeleportService()
-pcall(function()
-	if hookOk then
-		print("[Vampire Optimizer] Teleport hook installed: " .. tostring(hookMessage))
-	else
-		warn("[Vampire Optimizer] Teleport hook unavailable (" .. tostring(hookMessage) .. "); falling back to OnTeleport")
-	end
-end)
-
--- (3) OnTeleport luôn được kết nối như lưới an toàn — bắt cả teleport do game khởi tạo mà hook có thể bỏ sót.
-Connect(LocalPlayer.OnTeleport, function(teleportState)
-	if teleportState == Enum.TeleportState.Failed then
-		TeleportQueued = false
-		TeleportWarned = false
-		return
-	end
-	local ok, message = QueueReinjectIfConfigured("OnTeleport-fallback")
-	if not ok and Config.TeleportPersist ~= false and not TeleportWarned then
-		TeleportWarned = true
-		warn("[Vampire Optimizer] " .. tostring(message))
-	end
-end)
-
--- ==================== SERVER HOP ====================
 local function ExecutorHttpGet(url)
 	local ok, body = pcall(function() return game:HttpGet(url, true) end)
 	if ok and type(body) == "string" and body ~= "" then return body end
@@ -2366,6 +2250,93 @@ local function ExecutorHttpGet(url)
 	end
 	return nil, tostring(body or "HTTP request unavailable")
 end
+
+-- ---------- Re-run after teleport (Pistonware-style) ----------
+-- queue_on_teleport + LocalPlayer.OnTeleport ONLY re-run the script in the next server; they do not pick a server.
+-- Picking the new server is done by FetchPublicServerCandidates() + TeleportToPlaceInstance (see the hop button).
+-- Hooking OnTeleport means the script also survives teleports the GAME starts (lobby -> match, rejoin, Roblox UI hop...).
+local RELOAD_FILE_NAME = "VampireOptimizer_V7_3.lua"
+local TeleportQueued = false
+
+local function QueueReinjectIfConfigured(reason)
+	if Config.TeleportPersist == false then return false, "Re-run after teleport is OFF" end
+	if TeleportQueued then return true, "already queued" end
+	local rawUrl = tostring(Config.ReloadUrl or ""):gsub("^%s*(.-)%s*$", "%1")
+	local hasLocalFile = false
+	pcall(function()
+		hasLocalFile = type(isfile) == "function" and type(readfile) == "function" and isfile(RELOAD_FILE_NAME) == true
+	end)
+	if rawUrl == "" and not hasLocalFile then
+		return false, "No reload source: set a raw URL or save " .. RELOAD_FILE_NAME .. " in the executor workspace"
+	end
+	local queueFn = ResolveQueueOnTeleport()
+	if type(queueFn) ~= "function" then return false, "Executor has no queue_on_teleport" end
+	local okJson, configJson = pcall(function() return HttpService:JSONEncode(Config) end)
+	if not okJson then return false, "Could not encode saved settings" end
+	local bootstrap = string.format([[
+local configJson, reloadUrl, reloadFile = %q, %q, %q
+if not game:IsLoaded() then game.Loaded:Wait() end
+local Players = game:GetService("Players")
+while not Players.LocalPlayer do task.wait() end
+task.wait(1.5)
+local env = shared
+pcall(function() if type(getgenv) == "function" then env = getgenv() end end)
+if shared.VampireOptimizerDisabled or env.VampireOptimizerDisabled then return end
+pcall(function()
+  local cfg = game:GetService("HttpService"):JSONDecode(configJson)
+  shared.VampireOptimizerConfig = cfg
+  env.VampireOptimizerConfig = cfg
+end)
+local source
+if reloadUrl ~= "" then
+  local ok, body = pcall(function() return game:HttpGet(reloadUrl, true) end)
+  if ok and type(body) == "string" and body ~= "" then source = body end
+end
+if not source and reloadFile ~= "" and type(isfile) == "function" and type(readfile) == "function" then
+  local ok, body = pcall(function() if isfile(reloadFile) then return readfile(reloadFile) end end)
+  if ok and type(body) == "string" and body ~= "" then source = body end
+end
+if not source then warn("[Vampire Optimizer] No reload source available after teleport") return end
+local chunk, compileError = loadstring(source)
+if not chunk then warn(compileError) return end
+shared.VampireOptimizerReload = true
+pcall(function() env.VampireOptimizerReload = true end)
+local ran, runError = pcall(chunk)
+if not ran then warn(runError) end
+]], configJson, rawUrl, RELOAD_FILE_NAME)
+	local queued, queueErr = pcall(queueFn, bootstrap)
+	if not queued then return false, tostring(queueErr) end
+	TeleportQueued = true
+	return true, reason or "queued"
+end
+
+-- Any teleport (ours or the game's): queue once when it starts, allow queuing again if Roblox reports a failure.
+local function DescribeExecutor()
+	local name = "unknown executor"
+	pcall(function() if type(identifyexecutor) == "function" then name = tostring((identifyexecutor())) end end)
+	local function yn(value) return value and "OK" or "NO" end
+	local hasQueue = type(ResolveQueueOnTeleport()) == "function"
+	local hasFiles = type(readfile) == "function" and type(writefile) == "function" and type(isfile) == "function"
+	local hasHttp = type(request) == "function" or type(http_request) == "function"
+	pcall(function() if type(game.HttpGet) == "function" then hasHttp = true end end)
+	return string.format("%s | queue_on_teleport: %s | files: %s | http: %s", name, yn(hasQueue), yn(hasFiles), yn(hasHttp))
+end
+local ExecutorReport = DescribeExecutor()
+pcall(function() print("[Vampire Optimizer] " .. ExecutorReport) end)
+
+local TeleportWarned = false
+Connect(LocalPlayer.OnTeleport, function(teleportState)
+	if teleportState == Enum.TeleportState.Failed then
+		TeleportQueued = false
+		TeleportWarned = false
+		return
+	end
+	local ok, message = QueueReinjectIfConfigured("OnTeleport")
+	if not ok and Config.TeleportPersist ~= false and not TeleportWarned then
+		TeleportWarned = true -- OnTeleport fires several times per teleport; warn once
+		warn("[Vampire Optimizer] " .. tostring(message))
+	end
+end)
 
 local function FetchPublicServerCandidates()
 	local baseUrl = "https://games.roblox.com/v1/games/" .. tostring(game.PlaceId) .. "/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true"
@@ -2602,6 +2573,8 @@ end
 Connect(UIList:GetPropertyChangedSignal("AbsoluteContentSize"), UpdateCanvas)
 task.defer(UpdateCanvas)
 
+-- Quét vùng đã stream mỗi 6 giây khi người chơi bật Theo Dõi.
+-- Vòng lặp tự dừng khi bấm X.
 task.spawn(function()
 	while IsRunning do
 		if AreaMonitorEnabled then
@@ -2613,6 +2586,7 @@ task.spawn(function()
 	end
 end)
 
+-- TÌM KIẾM THEO TÊN
 Connect(SearchBox:GetPropertyChangedSignal("Text"), function()
 	local q = string.lower(SearchBox.Text)
 	for _, card in ipairs(allCards) do
@@ -2621,6 +2595,7 @@ Connect(SearchBox:GetPropertyChangedSignal("Text"), function()
 	UpdateCanvas()
 end)
 
+-- BẬT / TẮT MENU
 local isOpen = true
 local function SetMenuVisible(v)
 	isOpen = (v == true)
@@ -2630,13 +2605,16 @@ local function SetMenuVisible(v)
 	if ToggleButton then ToggleButton.Visible = true end
 end
 
+-- Nút X: khôi phục trạng thái ban đầu, ngắt mọi event, xóa GUI và dừng script.
 local function Shutdown()
 	if not IsRunning then return end
 	IsRunning = false
 
+	-- X = the user wants the script gone: stop the post-teleport bootstrap from reviving it.
 	pcall(function() shared.VampireOptimizerDisabled = true end)
 	pcall(function() PersistentEnv.VampireOptimizerDisabled = true end)
 
+	-- Chỉ tắt bộ theo dõi ở client; không gửi lệnh thay đổi trạng thái server.
 	AreaMonitorEnabled = false
 	Config.AreaMonitor = false
 	pcall(SaveConfig)
@@ -2669,6 +2647,7 @@ Connect(ToggleButton.Activated, function() SetMenuVisible(not MainFrame.Visible)
 Connect(MinBtn.Activated, function() SetMenuVisible(false) end)
 Connect(CloseBtn.Activated, function() Shutdown() end)
 
+-- NÚT KHÔI PHỤC TOÀN BỘ ĐỒ HỌA GỐC
 Connect(RestoreBtn.Activated, function()
 	RestoreAllGraphics()
 	syncPlast(false)
@@ -2692,12 +2671,14 @@ Connect(RestoreBtn.Activated, function()
 	task.delay(1.5, function() if IsRunning and RestoreBtn.Parent then RestoreBtn.Text = T("Restore") end end)
 end)
 
+-- NÚT LƯU CẤU HÌNH
 Connect(SaveBtn.Activated, function()
 	local saved, saveDetail = SaveConfig()
 	SaveBtn.Text = saved and ((saveDetail == "memory only") and "SAVED IN SESSION" or T("SavedSuccess")) or "SAVE FAILED"
 	task.delay(1.5, function() if IsRunning and SaveBtn.Parent then SaveBtn.Text = T("Save") end end)
 end)
 
+-- THEO DÕI ĐỐI TƯỢNG MỚI XUẤT HIỆN
 Connect(workspace.DescendantAdded, function(v)
 	task.defer(function()
 		if not IsRunning or not v or not v.Parent then return end
@@ -2746,11 +2727,12 @@ Connect(workspace.DescendantAdded, function(v)
 	end)
 end)
 
+-- KHỞI CHẠY TOÀN BỘ CẤU HÌNH ĐÃ LƯU. Mỗi phần chạy trong pcall riêng để một lỗi không chặn các phần còn lại.
 local function SafeApplySaved(label, callback)
 	local ok, err = pcall(callback)
 	if not ok then warn("[Vampire Optimizer] Apply " .. label .. " failed: " .. tostring(err)) end
 end
-Config.FlatHair = true
+Config.FlatHair = true -- auto-on by design
 SafeApplySaved("FlatPlastic", function() SetFlatPlastic(Config.FlatPlastic) end)
 SafeApplySaved("RemoveTextures", function() SetRemoveTextures(Config.RemoveTextures) end)
 SafeApplySaved("RemoveShadows", function() SetRemoveShadows(Config.RemoveShadows) end)
@@ -2762,8 +2744,9 @@ SafeApplySaved("FlatHair", function() SetFlatHair(true) end)
 SafeApplySaved("SkyMode", function() ApplySkyMode(Config.SkyMode) end)
 StoreConfigInMemory()
 QueueAutoSave()
-if IsReloadRun then pcall(SetMenuVisible, false) end
+if IsReloadRun then pcall(SetMenuVisible, false) end -- silent re-run after a teleport; open it with the toggle button
 
+-- Publish a safe stop handle so rerunning V7.3 first restores the previous session and disconnects it.
 local RuntimeHandle = { Stop = Shutdown }
 pcall(function() PersistentEnv.VampireOptimizerRuntime = RuntimeHandle end)
 pcall(function() shared.VampireOptimizerRuntime = RuntimeHandle end)
