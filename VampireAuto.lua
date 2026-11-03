@@ -1,8 +1,27 @@
 -- ====================================================================
---   VAMPIRE OPTIMIZER V7.3 - SOLID PLASTIC HAIR / TELEPORT PERSIST / PUBLIC SERVER HOP
+--   VAMPIRE OPTIMIZER V7.7 - SELF-CONTAINED / AUTO RE-RUN AFTER TELEPORT
+--   Paste this ONE file into the executor. Nothing else is needed (no URL, no outside app, no manual file):
+--     * it saves its own copy to workspace/VampireOptimizer/main.lua
+--     * when ANY teleport starts (lobby -> match, rejoin, server hop) it queues a small stub, like Cat Vape,
+--       which loads that copy again in the next server.
+--   Pressing X in the menu stops it for good (until you execute it again).
+-- ====================================================================
+
+local VAMPIRE_SOURCE = [==[
+-- ====================================================================
+--   VAMPIRE OPTIMIZER V7.7 - SOLID PLASTIC HAIR / TELEPORT PERSIST / PUBLIC SERVER HOP
+--   V7.7: MONITOR button is a real OPTION again: default ON, but once you press it your choice (ON/OFF) is saved and kept after teleports/re-runs.
+--         Galaxy sky prints/stores the texture preload status (console + COPY SKY REPORT) to find out whether the lobby sky textures fail to load.
+--   V7.6: Map monitor is ALWAYS ON at start-up; Sky card has a COPY SKY REPORT button; flat non-collidable giant plates named sky/dome
+--         (box-style skyboxes) are hidden too when Galaxy is selected.
+--   V7.5: stronger Galaxy sky for lobbies that run their own sky code (e.g. a SkyboxController): guards the Galaxy textures against
+--         being overwritten, hides huge dome-like sky parts (reversible), also stashes Terrain Clouds, 1s watchdog, prints a sky report.
+--   V7.4: (1) Map check card is compact and auto-monitors (ON by default, no longer reset by re-runs/teleports);
+--         (2) menu language follows Roblox live (no re-run needed);
+--         (3) Galaxy/Default sky re-asserts itself when the game adds/removes Sky objects, restores the NEWEST game sky.
 --   Auto applies saved client options; X restores graphics, disconnects events and destroys the GUI.
 --   Visible players’ hair becomes ONE solid SmoothPlastic colour (texture stripped, colour sampled from the original); reversible. Falls back to flattening only when the colour cannot be read.
---   After any teleport (script hop or game-initiated) queue_on_teleport + LocalPlayer.OnTeleport re-run this script, as Pistonware-style loaders do. Finding a new server is still done by the server-list query.
+--   Self-installing teleport re-run (Cat/Vape-style, no outside app): the script saves its own copy to workspace/VampireOptimizer/main.lua, and LocalPlayer.OnTeleport -> queue_on_teleport re-runs it after ANY teleport (script hop or game-started, e.g. lobby -> match). Without a file API the whole source is embedded in the queued stub.
 --   Removed player teleport/follow. Public server hop queries open public instances; client HTTP/teleport support can vary.
 --   No private-server discovery, JobId scraping, or privacy bypass.
 -- ====================================================================
@@ -36,6 +55,11 @@ end)
 -- A fresh manual run clears the 'user pressed X' flag that stops the post-teleport bootstrap.
 pcall(function() shared.VampireOptimizerDisabled = nil end)
 pcall(function() if type(getgenv) == "function" then getgenv().VampireOptimizerDisabled = nil end end)
+pcall(function()
+	if type(isfile) == "function" and type(writefile) == "function" and isfile("VampireOptimizer/disabled.flag") then
+		writefile("VampireOptimizer/disabled.flag", "0")
+	end
+end)
 -- Set only by the post-teleport bootstrap. Read once and cleared so a later manual run opens the menu normally.
 local IsReloadRun = false
 pcall(function() if shared.VampireOptimizerReload == true then IsReloadRun = true end end)
@@ -78,13 +102,13 @@ end
 
 local Lang = {
 	vi = {
-		Title="VAMPIRE OPTIMIZER V7.3", Search="Tìm kiếm tính năng...", Restore="Khôi phục đồ họa gốc", Save="Lưu cấu hình",
+		Title="VAMPIRE OPTIMIZER V7.7", Search="Tìm kiếm tính năng...", Restore="Khôi phục đồ họa gốc", Save="Lưu cấu hình",
 		FlatPlastic="Làm phẳng vật liệu (Nhựa)", FlatPlasticDesc="Đổi bề mặt sang nhựa; bỏ qua khối Lucky",
 		RemoveTextures="Ẩn Texture và Decal", RemoveTexturesDesc="Ẩn texture và decal trên bề mặt",
 		RemoveShadows="Tắt bóng đổ", RemoveShadowsDesc="Tắt bóng của vật thể để giảm tải đồ họa",
 		FxScaleTitle="Giảm hiệu ứng (0% - 100%)", FxScaleDesc="0% = tắt; 50% = giảm một nửa; 100% = mặc định",
 		RenderDistTitle="Khoảng sương mù", RenderDistDesc="Chỉ chỉnh Fog; không vượt giới hạn render hoặc Streaming của Roblox",
-		EngineQualityTitle="Chất lượng đồ họa (Level 1 - 21)", EngineQualityDesc="Level 1 nhẹ nhất; Level cao hơn thường đẹp và nặng hơn",
+		EngineQualityTitle="Chất lượng đồ họa (Level 1 - 21)", EngineQualityDesc="Level 1 nhẹ nhất; tầm nhìn vẫn tối đa nếu bật Giữ tầm nhìn",
 		LiteTerrain="Tối ưu địa hình", LiteTerrainDesc="Giảm sóng nước, phản xạ và cỏ trang trí",
 		SkyTitle="Tùy chọn bầu trời", SkyDesc="Chuyển giữa bầu trời Galaxy và bầu trời gốc",
 		SkyGalaxy="Bầu trời Galaxy", SkyDefault="Bầu trời gốc của game",
@@ -93,7 +117,7 @@ local Lang = {
 		ExpansionScriptStatus="Mở rộng map do V6.5: KHÔNG — chỉ chỉnh đồ họa/Fog", ExpansionServerStatus="Streaming server: KHÔNG THỂ ĐỌC hoặc CHỈNH từ client", ExpansionHint="Mở Network Stats bằng Shift+F3; các bảng debug tùy phiên bản Roblox",
 		AreaStatus="Vật thể trong bán kính 512 studs: %s | RAM: %s", MonitorOn="THEO DÕI: BẬT", MonitorOff="THEO DÕI: TẮT", Scan="QUÉT NGAY",
 		HairFlatTitle="Tóc nhựa một màu (tự bật)", HairFlatDesc="Biến tóc người chơi thành nhựa SmoothPlastic một màu: xóa texture rồi tô màu lấy từ màu gốc của tóc. Chỉ thấy trên máy bạn; có thể khôi phục.",
-        HairColorTitle="Tóc một màu theo màu gốc", HairColorDesc="Đọc màu trung bình từ texture tóc gốc (cần executor hỗ trợ EditableImage). Không đọc được màu thì tóc giữ texture nhưng vẫn được làm phẳng PBR.", HairRescan="QUÉT LẠI TÓC", HairRescanDone="Đã quét lại tóc của người chơi đang tải.", HairRescanEnable="Hãy bật Tóc nhựa trước khi quét lại.", HairSolidOn="MỘT MÀU: BẬT", HairSolidOff="MỘT MÀU: TẮT", HairStats="Một màu: %s | Chỉ làm phẳng: %s | Đang xử lý: %s", TeleportPersistTitle="Tự chạy lại sau khi chuyển server", TeleportPersistDesc="Dùng queue_on_teleport + LocalPlayer.OnTeleport để chạy lại script sau MỌI lần teleport (kể cả game tự chuyển). Cần URL raw hoặc file VampireOptimizer_V7_3.lua trong thư mục workspace của executor.",
+        HairColorTitle="Tóc một màu theo màu gốc", HairColorDesc="Đọc màu trung bình từ texture tóc gốc (cần executor hỗ trợ EditableImage). Không đọc được màu thì tóc giữ texture nhưng vẫn được làm phẳng PBR.", HairRescan="QUÉT LẠI TÓC", HairRescanDone="Đã quét lại tóc của người chơi đang tải.", HairRescanEnable="Hãy bật Tóc nhựa trước khi quét lại.", HairSolidOn="MỘT MÀU: BẬT", HairSolidOff="MỘT MÀU: TẮT", HairStats="Một màu: %s | Chỉ làm phẳng: %s | Đang xử lý: %s", FarViewTitle="Giữ tầm nhìn tối đa (như FFlag)", FarViewDesc="Đồ họa theo Level đã chọn, tầm nhìn vẫn như Level 21 (cần setfflag)", TeleportPersistTitle="Tự chạy lại sau khi chuyển server", TeleportPersistDesc="Tự lưu bản sao vào workspace, tự chạy lại sau MỌI lần teleport (như Cat Vape)",
 		AutoSaveTitle="Tự động lưu tùy chọn", AutoSaveDesc="Tự lưu sau khi thay đổi (cần executor hỗ trợ ghi file)",
 		JoinPlayerTitle="Tham gia server người chơi", JoinPlayerDesc="Không thể tự tìm JobId từ client trong game người khác; dùng nút Join chính thức nếu người chơi cho phép",
 		JoinPlayerStatus="Nhập username để tạo link hồ sơ; Roblox chỉ hiện Join nếu người đó cho phép.",
@@ -104,13 +128,13 @@ local Lang = {
 		ServerHopTitle="Đổi server công khai ngẫu nhiên", ServerHopDesc="Gửi yêu cầu Roblox matchmaking vào một phiên công khai của game hiện tại. Roblox có thể chọn lại server hiện tại; không đảm bảo ngẫu nhiên.", ServerHopButton="ĐỔI SERVER", ServerHopCopy="SAO CHÉP LINK DANH SÁCH SERVER", ServerHopReady="Sẵn sàng yêu cầu Roblox tìm phiên công khai.", ServerHopStarting="Đã gửi yêu cầu chuyển phiên cho Roblox...", ServerHopFailed="Không thể bắt đầu chuyển server: %s", ServerHopFailedEvent="Roblox từ chối chuyển server: %s", ServerHopCooldown="Vui lòng đợi trước khi thử lại.", ServerHopCopied="Đã sao chép link danh sách server công khai.", ServerHopCopyManual="Không có clipboard API; mở link server list thủ công.", On="BẬT", Off="TẮT", WaitingCharacter="Đang chờ nhân vật...",
 	},
 	en = {
-		Title="VAMPIRE OPTIMIZER V7.3", Search="Search features...", Restore="Restore original graphics", Save="Save settings",
+		Title="VAMPIRE OPTIMIZER V7.7", Search="Search features...", Restore="Restore original graphics", Save="Save settings",
 		FlatPlastic="Flat materials (Plastic)", FlatPlasticDesc="Convert surfaces to plastic; skips Lucky blocks",
 		RemoveTextures="Hide textures and decals", RemoveTexturesDesc="Hide surface textures and decals",
 		RemoveShadows="Disable shadows", RemoveShadowsDesc="Disable object shadows to reduce graphics load",
 		FxScaleTitle="Effect reduction (0% - 100%)", FxScaleDesc="0% = off; 50% = half; 100% = default",
 		RenderDistTitle="Fog distance", RenderDistDesc="Changes fog only; cannot bypass Roblox render or Streaming limits",
-		EngineQualityTitle="Graphics quality (Level 1 - 21)", EngineQualityDesc="Level 1 is lightest; higher levels usually look better and cost more",
+		EngineQualityTitle="Graphics quality (Level 1 - 21)", EngineQualityDesc="Level 1 is lightest; view stays max if Keep view distance is on",
 		LiteTerrain="Lite terrain", LiteTerrainDesc="Reduces water waves, reflections, and decorative grass",
 		SkyTitle="Sky options", SkyDesc="Switch between Galaxy sky and the game's original sky",
 		SkyGalaxy="Galaxy sky", SkyDefault="Game default sky",
@@ -119,7 +143,7 @@ local Lang = {
 		ExpansionScriptStatus="Map expanded by V6.5: NO — graphics/Fog only", ExpansionServerStatus="Server Streaming: CANNOT READ or CHANGE from client", ExpansionHint="Open Network Stats with Shift+F3; debug panels vary by Roblox version",
 		AreaStatus="Objects within 512 studs: %s | RAM: %s", MonitorOn="MONITOR: ON", MonitorOff="MONITOR: OFF", Scan="SCAN NOW",
 		HairFlatTitle="Solid plastic hair (auto enabled)", HairFlatDesc="Turns every visible player’s hair into one solid SmoothPlastic colour: strips the texture and paints it with the hair’s original colour. Local only; reversible.",
-        HairColorTitle="Solid hair, original colour", HairColorDesc="Averages the colour of the original hair texture (needs EditableImage support in your executor). If the colour cannot be read, the hair keeps its texture but is still flattened.", HairRescan="RESCAN HAIR", HairRescanDone="Rescanned hair for currently loaded players.", HairRescanEnable="Turn on Plastic hair before rescanning.", HairSolidOn="SOLID: ON", HairSolidOff="SOLID: OFF", HairStats="Solid: %s | Flattened only: %s | Working: %s", TeleportPersistTitle="Re-run after server change", TeleportPersistDesc="Uses queue_on_teleport + LocalPlayer.OnTeleport to re-run this script after EVERY teleport, including game-initiated ones. Needs a raw URL or VampireOptimizer_V7_3.lua saved in the executor workspace folder.",
+        HairColorTitle="Solid hair, original colour", HairColorDesc="Averages the colour of the original hair texture (needs EditableImage support in your executor). If the colour cannot be read, the hair keeps its texture but is still flattened.", HairRescan="RESCAN HAIR", HairRescanDone="Rescanned hair for currently loaded players.", HairRescanEnable="Turn on Plastic hair before rescanning.", HairSolidOn="SOLID: ON", HairSolidOff="SOLID: OFF", HairStats="Solid: %s | Flattened only: %s | Working: %s", FarViewTitle="Keep max view distance (FFlag)", FarViewDesc="Visuals follow the chosen level, view stays at Level 21 (needs setfflag)", TeleportPersistTitle="Re-run after server change", TeleportPersistDesc="Saves itself to workspace, re-runs after EVERY teleport (like Cat Vape)",
 		AutoSaveTitle="Auto-save settings", AutoSaveDesc="Saves after changes (requires executor file-write support)",
 		JoinPlayerTitle="Join a player server", JoinPlayerDesc="A client script in someone else’s game cannot look up another player’s JobId; use Roblox’s official Join option when allowed",
 		JoinPlayerStatus="Enter a username to make a profile link; Roblox shows Join only when that user allows it.",
@@ -130,7 +154,7 @@ local Lang = {
 		ServerHopTitle="Random public server hop", ServerHopDesc="Ask Roblox matchmaking to place you in a public session of this experience. Roblox may choose the current server; a random/different server is not guaranteed.", ServerHopButton="HOP SERVER", ServerHopCopy="COPY PUBLIC SERVER LIST LINK", ServerHopReady="Ready to ask Roblox for a public session.", ServerHopStarting="Server-switch request sent to Roblox...", ServerHopFailed="Could not start server switch: %s", ServerHopFailedEvent="Roblox rejected the server switch: %s", ServerHopCooldown="Please wait before trying again.", ServerHopCopied="Public server list link copied.", ServerHopCopyManual="Clipboard API unavailable; open the server list link manually.", On="ON", Off="OFF", WaitingCharacter="Waiting for character...",
 	},
 	ar = {
-		Title="VAMPIRE OPTIMIZER V7.3", Search="البحث عن الميزات...", Restore="استعادة الرسومات الأصلية", Save="حفظ الإعدادات",
+		Title="VAMPIRE OPTIMIZER V7.7", Search="البحث عن الميزات...", Restore="استعادة الرسومات الأصلية", Save="حفظ الإعدادات",
 		FlatPlastic="مواد مسطحة (بلاستيك)", FlatPlasticDesc="تحويل الأسطح إلى بلاستيك مع استثناء كتل Lucky",
 		RemoveTextures="إخفاء الخامات والملصقات", RemoveTexturesDesc="إخفاء الخامات والملصقات السطحية",
 		RemoveShadows="إيقاف الظلال", RemoveShadowsDesc="إيقاف ظلال العناصر لتقليل حمل الرسومات",
@@ -147,7 +171,7 @@ local Lang = {
 		On="تشغيل", Off="إيقاف", WaitingCharacter="بانتظار الشخصية...",
 	},
 	zhCN = {
-		Title="VAMPIRE OPTIMIZER V7.3", Search="搜索功能...", Restore="恢复原始画质", Save="保存设置",
+		Title="VAMPIRE OPTIMIZER V7.7", Search="搜索功能...", Restore="恢复原始画质", Save="保存设置",
 		FlatPlastic="平滑材质（塑料）", FlatPlasticDesc="将表面改为塑料材质，跳过 Lucky 方块",
 		RemoveTextures="隐藏纹理和贴花", RemoveTexturesDesc="隐藏表面纹理与贴花",
 		RemoveShadows="关闭阴影", RemoveShadowsDesc="关闭物体阴影以降低图形负载",
@@ -164,7 +188,7 @@ local Lang = {
 		On="开启", Off="关闭", WaitingCharacter="正在等待角色...",
 	},
 	zhTW = {
-		Title="VAMPIRE OPTIMIZER V7.3", Search="搜尋功能...", Restore="還原原始畫質", Save="儲存設定",
+		Title="VAMPIRE OPTIMIZER V7.7", Search="搜尋功能...", Restore="還原原始畫質", Save="儲存設定",
 		FlatPlastic="平滑材質（塑膠）", FlatPlasticDesc="將表面改為塑膠材質，略過 Lucky 方塊",
 		RemoveTextures="隱藏材質與貼花", RemoveTexturesDesc="隱藏表面材質與貼花",
 		RemoveShadows="關閉陰影", RemoveShadowsDesc="關閉物件陰影以降低圖形負載",
@@ -181,7 +205,7 @@ local Lang = {
 		On="開啟", Off="關閉", WaitingCharacter="正在等待角色...",
 	},
 	fr = {
-		Title="VAMPIRE OPTIMIZER V7.3", Search="Rechercher une option...", Restore="Restaurer les graphismes", Save="Enregistrer",
+		Title="VAMPIRE OPTIMIZER V7.7", Search="Rechercher une option...", Restore="Restaurer les graphismes", Save="Enregistrer",
 		FlatPlastic="Matériaux plats (plastique)", FlatPlasticDesc="Passe les surfaces en plastique, sauf les blocs Lucky",
 		RemoveTextures="Masquer textures et décalcomanies", RemoveTexturesDesc="Masque les textures et décalcomanies de surface",
 		RemoveShadows="Désactiver les ombres", RemoveShadowsDesc="Désactive les ombres pour réduire la charge graphique",
@@ -198,7 +222,7 @@ local Lang = {
 		On="OUI", Off="NON", WaitingCharacter="En attente du personnage...",
 	},
 	de = {
-		Title="VAMPIRE OPTIMIZER V7.3", Search="Funktion suchen...", Restore="Originalgrafik wiederherstellen", Save="Einstellungen speichern",
+		Title="VAMPIRE OPTIMIZER V7.7", Search="Funktion suchen...", Restore="Originalgrafik wiederherstellen", Save="Einstellungen speichern",
 		FlatPlastic="Flache Materialien (Plastik)", FlatPlasticDesc="Oberflächen auf Plastik setzen; Lucky-Blöcke auslassen",
 		RemoveTextures="Texturen und Abziehbilder ausblenden", RemoveTexturesDesc="Oberflächen-Texturen und Decals ausblenden",
 		RemoveShadows="Schatten deaktivieren", RemoveShadowsDesc="Objektschatten deaktivieren, um Grafiklast zu senken",
@@ -215,7 +239,7 @@ local Lang = {
 		On="AN", Off="AUS", WaitingCharacter="Warte auf Charakter...",
 	},
 	hi = {
-		Title="VAMPIRE OPTIMIZER V7.3", Search="फीचर खोजें...", Restore="मूल ग्राफ़िक्स वापस लाएँ", Save="सेटिंग सहेजें",
+		Title="VAMPIRE OPTIMIZER V7.7", Search="फीचर खोजें...", Restore="मूल ग्राफ़िक्स वापस लाएँ", Save="सेटिंग सहेजें",
 		FlatPlastic="फ्लैट सामग्री (प्लास्टिक)", FlatPlasticDesc="सतहों को प्लास्टिक करें; Lucky ब्लॉक छोड़ें",
 		RemoveTextures="टेक्सचर और डेकल छिपाएँ", RemoveTexturesDesc="सतह के टेक्सचर और डेकल छिपाएँ",
 		RemoveShadows="छायाएँ बंद करें", RemoveShadowsDesc="ग्राफ़िक्स लोड कम करने के लिए वस्तुओं की छायाएँ बंद करें",
@@ -232,7 +256,7 @@ local Lang = {
 		On="चालू", Off="बंद", WaitingCharacter="कैरेक्टर की प्रतीक्षा...",
 	},
 	id = {
-		Title="VAMPIRE OPTIMIZER V7.3", Search="Cari fitur...", Restore="Pulihkan grafis asli", Save="Simpan pengaturan",
+		Title="VAMPIRE OPTIMIZER V7.7", Search="Cari fitur...", Restore="Pulihkan grafis asli", Save="Simpan pengaturan",
 		FlatPlastic="Material datar (Plastik)", FlatPlasticDesc="Ubah permukaan menjadi plastik; lewati blok Lucky",
 		RemoveTextures="Sembunyikan tekstur dan decal", RemoveTexturesDesc="Sembunyikan tekstur dan decal permukaan",
 		RemoveShadows="Matikan bayangan", RemoveShadowsDesc="Matikan bayangan objek untuk mengurangi beban grafis",
@@ -249,7 +273,7 @@ local Lang = {
 		On="AKTIF", Off="NONAKTIF", WaitingCharacter="Menunggu karakter...",
 	},
 	it = {
-		Title="VAMPIRE OPTIMIZER V7.3", Search="Cerca funzione...", Restore="Ripristina grafica originale", Save="Salva impostazioni",
+		Title="VAMPIRE OPTIMIZER V7.7", Search="Cerca funzione...", Restore="Ripristina grafica originale", Save="Salva impostazioni",
 		FlatPlastic="Materiali piatti (plastica)", FlatPlasticDesc="Imposta superfici in plastica; esclude i blocchi Lucky",
 		RemoveTextures="Nascondi texture e decalcomanie", RemoveTexturesDesc="Nasconde texture e decalcomanie delle superfici",
 		RemoveShadows="Disattiva ombre", RemoveShadowsDesc="Disattiva le ombre degli oggetti per ridurre il carico grafico",
@@ -266,7 +290,7 @@ local Lang = {
 		On="ATTIVO", Off="SPENTO", WaitingCharacter="In attesa del personaggio...",
 	},
 	ja = {
-		Title="VAMPIRE OPTIMIZER V7.3", Search="機能を検索...", Restore="元の画質に戻す", Save="設定を保存",
+		Title="VAMPIRE OPTIMIZER V7.7", Search="機能を検索...", Restore="元の画質に戻す", Save="設定を保存",
 		FlatPlastic="フラット素材（プラスチック）", FlatPlasticDesc="表面をプラスチックに変更。Luckyブロックは除外",
 		RemoveTextures="テクスチャとデカールを非表示", RemoveTexturesDesc="表面のテクスチャとデカールを非表示",
 		RemoveShadows="影を無効化", RemoveShadowsDesc="オブジェクトの影を無効にして負荷を軽減",
@@ -283,7 +307,7 @@ local Lang = {
 		On="オン", Off="オフ", WaitingCharacter="キャラクターを待っています...",
 	},
 	ko = {
-		Title="VAMPIRE OPTIMIZER V7.3", Search="기능 검색...", Restore="기본 그래픽 복원", Save="설정 저장",
+		Title="VAMPIRE OPTIMIZER V7.7", Search="기능 검색...", Restore="기본 그래픽 복원", Save="설정 저장",
 		FlatPlastic="평면 재질(플라스틱)", FlatPlasticDesc="표면을 플라스틱으로 변경하고 Lucky 블록은 제외",
 		RemoveTextures="텍스처 및 데칼 숨기기", RemoveTexturesDesc="표면 텍스처와 데칼 숨기기",
 		RemoveShadows="그림자 끄기", RemoveShadowsDesc="그래픽 부하를 줄이기 위해 물체 그림자 끄기",
@@ -300,7 +324,7 @@ local Lang = {
 		On="켬", Off="끔", WaitingCharacter="캐릭터 대기 중...",
 	},
 	pl = {
-		Title="VAMPIRE OPTIMIZER V7.3", Search="Szukaj funkcji...", Restore="Przywróć oryginalną grafikę", Save="Zapisz ustawienia",
+		Title="VAMPIRE OPTIMIZER V7.7", Search="Szukaj funkcji...", Restore="Przywróć oryginalną grafikę", Save="Zapisz ustawienia",
 		FlatPlastic="Płaskie materiały (plastik)", FlatPlasticDesc="Zmień powierzchnie na plastik; pomiń bloki Lucky",
 		RemoveTextures="Ukryj tekstury i kalkomanie", RemoveTexturesDesc="Ukrywa tekstury i kalkomanie powierzchni",
 		RemoveShadows="Wyłącz cienie", RemoveShadowsDesc="Wyłącza cienie obiektów, aby zmniejszyć obciążenie grafiki",
@@ -317,7 +341,7 @@ local Lang = {
 		On="WŁ.", Off="WYŁ.", WaitingCharacter="Oczekiwanie na postać...",
 	},
 	pt = {
-		Title="VAMPIRE OPTIMIZER V7.3", Search="Pesquisar recurso...", Restore="Restaurar gráficos originais", Save="Salvar configurações",
+		Title="VAMPIRE OPTIMIZER V7.7", Search="Pesquisar recurso...", Restore="Restaurar gráficos originais", Save="Salvar configurações",
 		FlatPlastic="Materiais planos (plástico)", FlatPlasticDesc="Transforma superfícies em plástico; ignora blocos Lucky",
 		RemoveTextures="Ocultar texturas e decalques", RemoveTexturesDesc="Oculta texturas e decalques das superfícies",
 		RemoveShadows="Desativar sombras", RemoveShadowsDesc="Desativa sombras dos objetos para reduzir a carga gráfica",
@@ -334,7 +358,7 @@ local Lang = {
 		On="LIGADO", Off="DESLIGADO", WaitingCharacter="Aguardando personagem...",
 	},
 	es = {
-		Title="VAMPIRE OPTIMIZER V7.3", Search="Buscar función...", Restore="Restaurar gráficos originales", Save="Guardar ajustes",
+		Title="VAMPIRE OPTIMIZER V7.7", Search="Buscar función...", Restore="Restaurar gráficos originales", Save="Guardar ajustes",
 		FlatPlastic="Materiales planos (plástico)", FlatPlasticDesc="Cambia las superficies a plástico; excluye bloques Lucky",
 		RemoveTextures="Ocultar texturas y calcomanías", RemoveTexturesDesc="Oculta texturas y calcomanías de superficies",
 		RemoveShadows="Desactivar sombras", RemoveShadowsDesc="Desactiva sombras de objetos para reducir la carga gráfica",
@@ -351,7 +375,7 @@ local Lang = {
 		On="ACTIVADO", Off="DESACTIVADO", WaitingCharacter="Esperando al personaje...",
 	},
 	th = {
-		Title="VAMPIRE OPTIMIZER V7.3", Search="ค้นหาฟีเจอร์...", Restore="คืนค่ากราฟิกเดิม", Save="บันทึกการตั้งค่า",
+		Title="VAMPIRE OPTIMIZER V7.7", Search="ค้นหาฟีเจอร์...", Restore="คืนค่ากราฟิกเดิม", Save="บันทึกการตั้งค่า",
 		FlatPlastic="วัสดุเรียบ (พลาสติก)", FlatPlasticDesc="เปลี่ยนพื้นผิวเป็นพลาสติก ยกเว้นบล็อก Lucky",
 		RemoveTextures="ซ่อนพื้นผิวและ Decal", RemoveTexturesDesc="ซ่อนพื้นผิวและ Decal บนวัตถุ",
 		RemoveShadows="ปิดเงา", RemoveShadowsDesc="ปิดเงาของวัตถุเพื่อลดภาระกราฟิก",
@@ -368,7 +392,7 @@ local Lang = {
 		On="เปิด", Off="ปิด", WaitingCharacter="กำลังรอตัวละคร...",
 	},
 	tr = {
-		Title="VAMPIRE OPTIMIZER V7.3", Search="Özellik ara...", Restore="Orijinal grafikleri geri yükle", Save="Ayarları kaydet",
+		Title="VAMPIRE OPTIMIZER V7.7", Search="Özellik ara...", Restore="Orijinal grafikleri geri yükle", Save="Ayarları kaydet",
 		FlatPlastic="Düz malzemeler (Plastik)", FlatPlasticDesc="Yüzeyleri plastiğe dönüştürür; Lucky bloklarını atlar",
 		RemoveTextures="Dokuları ve çıkartmaları gizle", RemoveTexturesDesc="Yüzey dokularını ve çıkartmalarını gizler",
 		RemoveShadows="Gölgeleri kapat", RemoveShadowsDesc="Grafik yükünü azaltmak için nesne gölgelerini kapatır",
@@ -497,10 +521,12 @@ local Config = {
 	EngineQuality = 1,
 	LiteTerrain = false,
 	SkyMode = "Default",
-	AreaMonitor = false,
+	LiveMonitor = true,
+	LiveMonitorSet = false, -- true only after the user pressed the MONITOR button
 	FlatHair = true,
 	HairSolid = true,
 	TeleportPersist = true,
+	KeepFarView = true,
 	AutoSave = true,
 	ReloadUrl = "",
 }
@@ -574,10 +600,13 @@ Config.FlatPlastic = Config.FlatPlastic == true
 Config.RemoveTextures = Config.RemoveTextures == true
 Config.RemoveShadows = Config.RemoveShadows == true
 Config.LiteTerrain = Config.LiteTerrain == true
-Config.AreaMonitor = Config.AreaMonitor == true
+Config.LiveMonitorSet = Config.LiveMonitorSet == true
+-- V7.7: mặc định BẬT; chỉ khi bạn tự bấm nút MONITOR thì lựa chọn (BẬT/TẮT) mới được nhớ qua các lần chạy lại/teleport.
+if Config.LiveMonitorSet then Config.LiveMonitor = Config.LiveMonitor == true else Config.LiveMonitor = true end
 Config.FlatHair = true -- V7.3 starts with solid-colour SmoothPlastic hair enabled.
 Config.HairSolid = Config.HairSolid ~= false
 Config.TeleportPersist = Config.TeleportPersist ~= false
+Config.KeepFarView = Config.KeepFarView ~= false
 Config.ReloadUrl = (type(Config.ReloadUrl) == "string") and Config.ReloadUrl or ""
 if Config.AutoSave == nil then Config.AutoSave = true else Config.AutoSave = Config.AutoSave == true end
 Config.SkyMode = (Config.SkyMode == "Galaxy") and "Galaxy" or "Default"
@@ -713,10 +742,80 @@ local function SetRenderDistance(dist)
 	QueueAutoSave()
 end
 
--- 6. Cấp độ đồ họa Engine Roblox Studio (Thay thế FFlag)
+-- 6. Cấp độ đồ họa. Giống FFlag DFIntDebugFRMQualityLevelOverride:
+--    flag = độ đẹp/nặng của hình ảnh (FRM); khi flag bật, QualityLevel của Roblox chỉ còn quyết định TẦM NHÌN.
+--    Nên chọn Level 1 = hình ảnh Level 1 + QualityLevel của Roblox ở 21 (tầm nhìn tối đa). Cần executor có setfflag.
+--    Nếu executor không có/không nhận setfflag thì quay về cách cũ: QualityLevel = level đã chọn (tầm nhìn ngắn theo level đó).
+local FrmFlag = { Name = "DFIntDebugFRMQualityLevelOverride", Original = nil, Applied = false, Current = nil, Warned = false }
+
+function FrmFlag.Setter()
+	local fn
+	pcall(function() if type(setfflag) == "function" then fn = setfflag end end)
+	if not fn then pcall(function() if type(set_fflag) == "function" then fn = set_fflag end end) end
+	if not fn then pcall(function() if type(syn) == "table" and type(syn.setfflag) == "function" then fn = syn.setfflag end end) end
+	if not fn then
+		pcall(function()
+			if type(getgenv) == "function" then
+				local env = getgenv()
+				if type(env) == "table" and type(env.setfflag) == "function" then fn = env.setfflag end
+			end
+		end)
+	end
+	return fn
+end
+
+function FrmFlag.Getter()
+	local fn
+	pcall(function() if type(getfflag) == "function" then fn = getfflag end end)
+	if not fn then pcall(function() if type(get_fflag) == "function" then fn = get_fflag end end) end
+	if not fn then pcall(function() if type(syn) == "table" and type(syn.getfflag) == "function" then fn = syn.getfflag end end) end
+	return fn
+end
+
+function FrmFlag.Read()
+	local getter = FrmFlag.Getter()
+	if not getter then return nil end
+	local ok, value = pcall(getter, FrmFlag.Name)
+	if ok and value ~= nil and tostring(value) ~= "" then return tostring(value) end
+	return nil
+end
+
+-- Returns true when the flag now holds `level`; false + reason otherwise.
+function FrmFlag.Set(level)
+	if FrmFlag.Applied and FrmFlag.Current == level then return true end
+	local setter = FrmFlag.Setter()
+	if not setter then return false, "executor has no setfflag" end
+	if FrmFlag.Original == nil then
+		pcall(function() FrmFlag.Original = PersistentEnv.VampireOptimizerFrmOriginal end)
+		if FrmFlag.Original == nil then
+			FrmFlag.Original = FrmFlag.Read() or "0"
+			pcall(function() PersistentEnv.VampireOptimizerFrmOriginal = FrmFlag.Original end)
+		end
+	end
+	local ok, err = pcall(setter, FrmFlag.Name, tostring(level))
+	if not ok then return false, tostring(err) end
+	local now = FrmFlag.Read()
+	if now ~= nil and now ~= tostring(level) then return false, "executor ignored the value (reads back " .. now .. ")" end
+	FrmFlag.Applied = true
+	FrmFlag.Current = level
+	return true
+end
+
+function FrmFlag.Restore()
+	if not FrmFlag.Applied then return end
+	local original = FrmFlag.Original or "0"
+	FrmFlag.Applied = false
+	FrmFlag.Current = nil
+	FrmFlag.Original = nil
+	local setter = FrmFlag.Setter()
+	if setter then pcall(setter, FrmFlag.Name, tostring(original)) end
+	pcall(function() PersistentEnv.VampireOptimizerFrmOriginal = nil end)
+end
+
 local function SetEngineQualityLevel(lvl)
 	if tostring(lvl):upper() == "AUTO" then
 		Config.EngineQuality = "AUTO"
+		FrmFlag.Restore()
 		pcall(function()
 			settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic
 		end)
@@ -729,9 +828,21 @@ local function SetEngineQualityLevel(lvl)
 	lvl = math.clamp(math.floor(tonumber(lvl) or 1), 1, 21)
 	Config.EngineQuality = lvl
 
+	local farView = false
+	if Config.KeepFarView ~= false and lvl < 21 then
+		local applied, why = FrmFlag.Set(lvl)
+		farView = applied == true
+		if not farView and not FrmFlag.Warned then
+			FrmFlag.Warned = true
+			warn("[Vampire Optimizer] " .. FrmFlag.Name .. " not applied (" .. tostring(why) .. "): view distance follows the chosen level")
+		end
+	else
+		FrmFlag.Restore() -- level 21 already has full view distance; KeepFarView off = plain engine level
+	end
+
 	pcall(function()
-		local enumName = string.format("Level%02d", lvl)
-		settings().Rendering.QualityLevel = Enum.QualityLevel[enumName]
+		local engineLevel = farView and 21 or lvl -- with the flag on this slider is the render distance
+		settings().Rendering.QualityLevel = Enum.QualityLevel[string.format("Level%02d", engineLevel)]
 	end)
 
 	-- Tối ưu thêm ánh sáng môi trường PBR
@@ -1168,43 +1279,302 @@ end
 for _, player in ipairs(Players:GetPlayers()) do HookPlayerHair(player) end
 Connect(Players.PlayerAdded, HookPlayerHair)
 
--- 9. Quản lý Bầu Trời (Galaxy Vũ Trụ & Sky Gốc)
+-- 9. Quản lý Bầu Trời (Galaxy Vũ Trụ & Sky Gốc)  -- V7.5
+-- Dành cho sảnh có code bầu trời riêng (ví dụ SkyboxController):
+--   * giữ nguyên texture Galaxy nếu game cố ghi đè lên Sky của mình;
+--   * cất Sky/Atmosphere/Clouds mới của game (Lighting + Terrain), dựng lại Galaxy nếu bị xóa;
+--   * ẩn các part KHỔNG LỒ hình khối (mái vòm) có tên chứa sky/dome/galaxy/cosmos — hoàn nguyên khi về Sky gốc;
+--   * in báo cáo ngắn ra console để biết script đã cất/ẩn những gì.
 local customSkyInst = nil
+local ApplySkyMode -- gán bên dưới
+local BuildSkyReport -- gán bên dưới (nút COPY SKY REPORT dùng)
+do
+	local SkyBackups = {}      -- { {inst=, class=, parent=}, ... } phần tử sau = mới hơn
+	local HiddenSkyParts = {}  -- [part] = Transparency gốc
+	local galaxyOn = false
+	local reassertLogged = 0
+	local lastPreloadInfo = "not run yet"
+	local preloadPrinted = false
 
-local function ApplySkyMode(mode)
-	Config.SkyMode = mode
-	QueueAutoSave()
+	local GALAXY_PROPS = {
+		SkyboxBk = "rbxassetid://159454299",
+		SkyboxFt = "rbxassetid://159454293",
+		SkyboxLf = "rbxassetid://159454286",
+		SkyboxRt = "rbxassetid://159454300",
+		SkyboxUp = "rbxassetid://159454288",
+		SkyboxDn = "rbxassetid://159454288", -- dùng chung texture vũ trụ để bỏ viền xanh
+		CelestialBodiesShown = true,
+	}
 
-	if customSkyInst then
-		customSkyInst:Destroy()
-		customSkyInst = nil
+	local function SkyClass(obj)
+		if obj:IsA("Sky") then return "Sky" end
+		if obj:IsA("Atmosphere") then return "Atmosphere" end
+		if obj:IsA("Clouds") then return "Clouds" end
+		return nil
 	end
 
-	if mode == "Default" then
-		for _, child in ipairs(SkyFolder:GetChildren()) do
-			child.Parent = Lighting
+	local function StashGameSky(obj)
+		if obj == customSkyInst then return end
+		local class = SkyClass(obj)
+		if not class then return end
+		for i = #SkyBackups, 1, -1 do
+			if SkyBackups[i].inst == obj then table.remove(SkyBackups, i) end
 		end
-		return
+		table.insert(SkyBackups, { inst = obj, class = class, parent = obj.Parent })
+		while #SkyBackups > 20 do table.remove(SkyBackups, 1) end
+		pcall(function() obj.Parent = SkyFolder end)
 	end
 
-	for _, obj in ipairs(Lighting:GetChildren()) do
-		if obj:IsA("Sky") or obj:IsA("Atmosphere") or obj:IsA("Clouds") then
-			obj.Parent = SkyFolder
+	-- Chỉ trả về bản MỚI NHẤT của mỗi loại, về đúng chỗ cũ (Lighting hoặc Terrain).
+	local function RestoreGameSky()
+		local restored = {}
+		for i = #SkyBackups, 1, -1 do
+			local entry = SkyBackups[i]
+			if not restored[entry.class] and entry.inst and entry.inst.Parent == SkyFolder then
+				restored[entry.class] = true
+				local target = entry.parent
+				if not target or not target.Parent then target = Lighting end
+				pcall(function() entry.inst.Parent = target end)
+			end
+		end
+		SkyBackups = {}
+	end
+
+	-- Part bầu trời của game: (a) khối/mái vòm lớn ở CẢ BA chiều, hoặc (b) tấm phẳng khổng lồ KHÔNG va chạm (mặt của skybox dạng hộp).
+	-- Sàn/tường thật có va chạm nên không dính. Chỉ bị ẩn khi tên mình/cha có từ khóa bầu trời (xem HasSkyName).
+	local function IsDomeShaped(part)
+		local size = part.Size
+		local smallest = math.min(size.X, size.Y, size.Z)
+		local largest = math.max(size.X, size.Y, size.Z)
+		if smallest >= 300 then return true end
+		return largest >= 1000 and part.CanCollide == false
+	end
+	local function HasSkyName(part)
+		local cur = part
+		while cur and cur ~= workspace do
+			local name = string.lower(cur.Name)
+			if name:find("sky", 1, true) or name:find("dome", 1, true) or name:find("galaxy", 1, true) or name:find("cosmos", 1, true) then
+				return true
+			end
+			cur = cur.Parent
+		end
+		return false
+	end
+
+	local function HideSkyPart(part)
+		if HiddenSkyParts[part] ~= nil then return end
+		HiddenSkyParts[part] = part.Transparency
+		pcall(function() part.Transparency = 1 end)
+	end
+
+	local function UnhideSkyParts()
+		for part, transparency in pairs(HiddenSkyParts) do
+			if part and part.Parent then pcall(function() part.Transparency = transparency end) end
+		end
+		HiddenSkyParts = {}
+	end
+
+	local function ApplyGalaxyProps(sky)
+		for name, value in pairs(GALAXY_PROPS) do
+			local ok, current = pcall(function() return sky[name] end)
+			if ok and current ~= value then
+				pcall(function() sky[name] = value end)
+				if reassertLogged < 3 then
+					reassertLogged = reassertLogged + 1
+					print("[Vampire Optimizer] Sky: game changed Galaxy property '" .. name .. "' -> restored")
+				end
+			end
 		end
 	end
 
-	customSkyInst = Instance.new("Sky")
-	customSkyInst.Name = "VampireGalaxySky"
-	customSkyInst.Parent = Lighting
+	local function BuildGalaxySky()
+		if customSkyInst and customSkyInst.Parent == Lighting then return end
+		if customSkyInst then pcall(function() customSkyInst:Destroy() end) end
+		local sky = Instance.new("Sky")
+		sky.Name = "VampireGalaxySky"
+		for name, value in pairs(GALAXY_PROPS) do sky[name] = value end
+		sky.Parent = Lighting
+		customSkyInst = sky
+		-- Game ghi đè texture/thuộc tính của Sky Galaxy -> ghi lại ngay.
+		for name in pairs(GALAXY_PROPS) do
+			pcall(function()
+				Connect(sky:GetPropertyChangedSignal(name), function()
+					task.defer(function()
+						if IsRunning and galaxyOn and sky == customSkyInst and sky.Parent then ApplyGalaxyProps(sky) end
+					end)
+				end)
+			end)
+		end
+		-- Tải trước texture để tránh bầu trời đen lúc ảnh chưa tải xong.
+		task.spawn(function()
+			local lines, failed = {}, 0
+			pcall(function()
+				game:GetService("ContentProvider"):PreloadAsync({ sky }, function(contentId, status)
+					table.insert(lines, tostring(contentId) .. "=" .. tostring(status))
+					if status ~= Enum.AssetFetchStatus.Success then failed = failed + 1 end
+				end)
+			end)
+			lastPreloadInfo = string.format("failed=%d/%d %s", failed, #lines, table.concat(lines, " "))
+			if failed > 0 or not preloadPrinted then
+				preloadPrinted = true
+				print("[Vampire Optimizer] Galaxy sky textures: " .. lastPreloadInfo)
+			end
+		end)
+	end
 
-	local spaceUp = "rbxassetid://159454288"
-	customSkyInst.CelestialBodiesShown = true
-	customSkyInst.SkyboxBk = "rbxassetid://159454299"
-	customSkyInst.SkyboxFt = "rbxassetid://159454293"
-	customSkyInst.SkyboxLf = "rbxassetid://159454286"
-	customSkyInst.SkyboxRt = "rbxassetid://159454300"
-	customSkyInst.SkyboxUp = spaceUp
-	customSkyInst.SkyboxDn = spaceUp -- Dùng chung texture vũ trụ để loại bỏ hoàn toàn viền xanh
+	local function StashAllNow()
+		for _, obj in ipairs(Lighting:GetChildren()) do StashGameSky(obj) end
+		local terrain = workspace:FindFirstChildOfClass("Terrain")
+		if terrain then
+			for _, obj in ipairs(terrain:GetChildren()) do StashGameSky(obj) end
+		end
+	end
+
+	local function PrintReport(tag, candidates)
+		local stashed, hidden, hiddenNames = 0, 0, {}
+		for _, entry in ipairs(SkyBackups) do
+			if entry.inst and entry.inst.Parent == SkyFolder then stashed = stashed + 1 end
+		end
+		for part in pairs(HiddenSkyParts) do
+			hidden = hidden + 1
+			if #hiddenNames < 3 then table.insert(hiddenNames, part:GetFullName()) end
+		end
+		print(string.format("[Vampire Optimizer] Sky (%s): stashed=%d, hidden dome parts=%d%s",
+			tag, stashed, hidden, #hiddenNames > 0 and (" [" .. table.concat(hiddenNames, " | ") .. "]") or ""))
+		if candidates and #candidates > 0 then
+			print("[Vampire Optimizer] Sky: big cube-like parts NOT hidden (name has no sky/dome keyword): " .. table.concat(candidates, " | "))
+		end
+	end
+
+	local function ReadProp(inst, name)
+		local ok, value = pcall(function() return inst[name] end)
+		if ok then return tostring(value) end
+		return "?"
+	end
+
+	BuildSkyReport = function()
+		local lines = {}
+		local function add(text) table.insert(lines, text) end
+		add(string.format("== VAMPIRE SKY REPORT (V7.6) | mode=%s | galaxyOn=%s | placeId=%s ==", tostring(Config.SkyMode), tostring(galaxyOn), tostring(game.PlaceId)))
+		add("Lighting: ClockTime=" .. ReadProp(Lighting, "ClockTime") .. ", Brightness=" .. ReadProp(Lighting, "Brightness")
+			.. ", Exposure=" .. ReadProp(Lighting, "ExposureCompensation") .. ", Technology=" .. ReadProp(Lighting, "Technology")
+			.. ", Ambient=" .. ReadProp(Lighting, "Ambient") .. ", OutdoorAmbient=" .. ReadProp(Lighting, "OutdoorAmbient"))
+		add("-- Lighting children --")
+		for _, child in ipairs(Lighting:GetChildren()) do
+			add("  " .. child.ClassName .. " '" .. child.Name .. "'")
+		end
+		if customSkyInst then
+			add("-- Galaxy sky --")
+			add("  parent=" .. tostring(customSkyInst.Parent and customSkyInst.Parent.Name) .. " Bk=" .. ReadProp(customSkyInst, "SkyboxBk")
+				.. " Up=" .. ReadProp(customSkyInst, "SkyboxUp") .. " bodies=" .. ReadProp(customSkyInst, "CelestialBodiesShown")
+				.. " stars=" .. ReadProp(customSkyInst, "StarCount"))
+		end
+		add("Galaxy texture preload: " .. lastPreloadInfo)
+		add("-- Stashed game sky objects --")
+		for _, entry in ipairs(SkyBackups) do
+			add("  " .. entry.class .. " '" .. entry.inst.Name .. "' inFolder=" .. tostring(entry.inst.Parent == SkyFolder))
+		end
+		add("-- Hidden sky parts --")
+		for part in pairs(HiddenSkyParts) do add("  " .. part:GetFullName()) end
+		add("-- Big parts (>= 800 studs) --")
+		local count = 0
+		for _, d in ipairs(workspace:GetDescendants()) do
+			if d:IsA("BasePart") then
+				local size = d.Size
+				if math.max(size.X, size.Y, size.Z) >= 800 then
+					count = count + 1
+					if count <= 12 then
+						add(string.format("  %s %s size=%.0f,%.0f,%.0f transp=%s collide=%s hidden=%s", d.ClassName, d:GetFullName(),
+							size.X, size.Y, size.Z, ReadProp(d, "Transparency"), ReadProp(d, "CanCollide"), tostring(HiddenSkyParts[d] ~= nil)))
+					end
+				end
+			end
+		end
+		add("  total=" .. count)
+		add("-- Camera children --")
+		for _, child in ipairs(workspace.CurrentCamera:GetChildren()) do
+			add("  " .. child.ClassName .. " '" .. child.Name .. "'")
+		end
+		return table.concat(lines, "\n")
+	end
+
+	ApplySkyMode = function(mode)
+		Config.SkyMode = mode
+		QueueAutoSave()
+
+		if mode == "Galaxy" then
+			galaxyOn = true
+			StashAllNow()
+			BuildGalaxySky()
+			if customSkyInst then ApplyGalaxyProps(customSkyInst) end
+			local candidates = {}
+			pcall(function()
+				for _, d in ipairs(workspace:GetDescendants()) do
+					if d:IsA("BasePart") and IsDomeShaped(d) then
+						if HasSkyName(d) then
+							HideSkyPart(d)
+						elseif #candidates < 5 then
+							table.insert(candidates, d:GetFullName())
+						end
+					end
+				end
+			end)
+			PrintReport("Galaxy", candidates)
+		else
+			galaxyOn = false
+			if customSkyInst then
+				pcall(function() customSkyInst:Destroy() end)
+				customSkyInst = nil
+			end
+			RestoreGameSky()
+			UnhideSkyParts()
+		end
+	end
+
+	-- Game thêm Sky/Atmosphere/Clouds mới (Lighting hoặc Terrain) khi đang ở Galaxy -> cất đi.
+	local function WatchContainer(container)
+		if not container then return end
+		Connect(container.ChildAdded, function(obj)
+			if not galaxyOn or obj == customSkyInst or not SkyClass(obj) then return end
+			task.defer(function()
+				if IsRunning and galaxyOn and obj.Parent == container then StashGameSky(obj) end
+			end)
+		end)
+	end
+	WatchContainer(Lighting)
+	WatchContainer(workspace:FindFirstChildOfClass("Terrain"))
+
+	-- Game xóa Galaxy (ClearAllChildren trên Lighting...) -> dựng lại.
+	Connect(Lighting.ChildRemoved, function(obj)
+		if not galaxyOn or obj ~= customSkyInst then return end
+		task.delay(0.3, function()
+			if IsRunning and galaxyOn and (not customSkyInst or customSkyInst.Parent ~= Lighting) then
+				BuildGalaxySky()
+			end
+		end)
+	end)
+
+	-- Part mái vòm mới xuất hiện (map/sảnh load muộn) -> ẩn nếu giống mái vòm bầu trời.
+	Connect(workspace.DescendantAdded, function(obj)
+		if not galaxyOn or not obj:IsA("BasePart") then return end
+		task.defer(function()
+			if IsRunning and galaxyOn and obj.Parent and IsDomeShaped(obj) and HasSkyName(obj) then HideSkyPart(obj) end
+		end)
+	end)
+
+	-- Canh gác mỗi giây: Galaxy phải còn, đúng thuộc tính, không còn Sky game nào đè lên.
+	task.spawn(function()
+		while IsRunning do
+			task.wait(1)
+			if galaxyOn then
+				pcall(function()
+					StashAllNow()
+					BuildGalaxySky()
+					if customSkyInst then ApplyGalaxyProps(customSkyInst) end
+				end)
+			end
+		end
+	end)
 end
 
 -- 10. Khôi Phục Toàn Bộ Đồ Họa Gốc 100%
@@ -1218,6 +1588,7 @@ local function RestoreAllGraphics()
 	SetLiteTerrain(false)
 	ApplySkyMode("Default")
 
+	FrmFlag.Restore()
 	pcall(function()
 		settings().Rendering.QualityLevel = Backup.InitialEngineQuality
 	end)
@@ -1957,7 +2328,7 @@ end
 local function CreateSkyCard()
 	local Card = Instance.new("Frame")
 	Card.Name = "SkyControl " .. T("SkyTitle")
-	Card.Size = UDim2.new(1, -8, 0, 75)
+	Card.Size = UDim2.new(1, -8, 0, 102)
 	Card.BackgroundColor3 = Color3.fromRGB(26, 10, 14)
 	Card.Parent = Scroll
 	Instance.new("UICorner", Card).CornerRadius = UDim.new(0, 6)
@@ -2006,6 +2377,29 @@ local function CreateSkyCard()
 	DefaultBtn.Parent = Card
 	Instance.new("UICorner", DefaultBtn).CornerRadius = UDim.new(0, 5)
 
+	local ReportBtn = Instance.new("TextButton")
+	ReportBtn.Size = UDim2.new(1, -20, 0, 22)
+	ReportBtn.Position = UDim2.new(0, 10, 0, 74)
+	ReportBtn.BackgroundColor3 = Color3.fromRGB(75, 18, 28)
+	ReportBtn.Text = "COPY SKY REPORT"
+	ReportBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	ReportBtn.Font = Enum.Font.GothamBold
+	ReportBtn.TextSize = 10
+	ReportBtn.Parent = Card
+	Instance.new("UICorner", ReportBtn).CornerRadius = UDim.new(0, 5)
+	Connect(ReportBtn.Activated, function()
+		local ok, text = pcall(BuildSkyReport)
+		if not ok then text = "Sky report failed: " .. tostring(text) end
+		print("[Vampire Optimizer]\n" .. text)
+		local copied = false
+		pcall(function()
+			if setclipboard then setclipboard(text); copied = true
+			elseif toclipboard then toclipboard(text); copied = true end
+		end)
+		ReportBtn.Text = copied and "COPIED - PASTE IT INTO THE CHAT" or "PRINTED TO CONSOLE (F9)"
+		task.delay(2.5, function() if IsRunning and ReportBtn.Parent then ReportBtn.Text = "COPY SKY REPORT" end end)
+	end)
+
 	local function UpdateSkyButtons(selected)
 		GalaxyBtn.BackgroundColor3 = (selected == "Galaxy") and Color3.fromRGB(190, 25, 45) or Color3.fromRGB(45, 15, 20)
 		DefaultBtn.BackgroundColor3 = (selected == "Default") and Color3.fromRGB(190, 25, 45) or Color3.fromRGB(45, 15, 20)
@@ -2028,7 +2422,7 @@ end
 -- Card này báo rõ script không mở rộng Streaming; chỉ đếm BasePart đã có mặt ở client quanh nhân vật.
 local AreaStatusLabel = nil
 local AreaMonitorButton = nil
-local AreaMonitorEnabled = Config.AreaMonitor
+local AreaMonitorEnabled = Config.LiveMonitor
 
 local function GetAreaSnapshot()
 	local character = LocalPlayer.Character
@@ -2069,14 +2463,10 @@ local function RefreshAreaStatus()
 	AreaStatusLabel.Text = string.format(T("AreaStatus"), partText, memoryText)
 end
 
-local ExpansionScriptLabel = nil
-local ExpansionServerLabel = nil
-local ExpansionHintLabel = nil
-
 local function CreateAreaMonitorCard()
 	local Card = Instance.new("Frame")
 	Card.Name = "MapExpansionCheck " .. T("AreaTitle")
-	Card.Size = UDim2.new(1, -8, 0, 148)
+	Card.Size = UDim2.new(1, -8, 0, 104)
 	Card.BackgroundColor3 = Color3.fromRGB(26, 10, 14)
 	Card.Parent = Scroll
 	Instance.new("UICorner", Card).CornerRadius = UDim.new(0, 6)
@@ -2104,57 +2494,21 @@ local function CreateAreaMonitorCard()
 	Sub.TextTruncate = Enum.TextTruncate.AtEnd
 	Sub.Parent = Card
 
-	ExpansionScriptLabel = Instance.new("TextLabel")
-	ExpansionScriptLabel.Size = UDim2.new(1, -20, 0, 16)
-	ExpansionScriptLabel.Position = UDim2.new(0, 10, 0, 45)
-	ExpansionScriptLabel.BackgroundTransparency = 1
-	ExpansionScriptLabel.Text = T("ExpansionScriptStatus")
-	ExpansionScriptLabel.TextColor3 = Color3.fromRGB(255, 105, 105)
-	ExpansionScriptLabel.Font = Enum.Font.GothamBold
-	ExpansionScriptLabel.TextSize = 9
-	ExpansionScriptLabel.TextXAlignment = Enum.TextXAlignment.Left
-	ExpansionScriptLabel.TextTruncate = Enum.TextTruncate.AtEnd
-	ExpansionScriptLabel.Parent = Card
-
-	ExpansionServerLabel = Instance.new("TextLabel")
-	ExpansionServerLabel.Size = UDim2.new(1, -20, 0, 16)
-	ExpansionServerLabel.Position = UDim2.new(0, 10, 0, 62)
-	ExpansionServerLabel.BackgroundTransparency = 1
-	ExpansionServerLabel.Text = T("ExpansionServerStatus")
-	ExpansionServerLabel.TextColor3 = Color3.fromRGB(255, 190, 100)
-	ExpansionServerLabel.Font = Enum.Font.Gotham
-	ExpansionServerLabel.TextSize = 9
-	ExpansionServerLabel.TextXAlignment = Enum.TextXAlignment.Left
-	ExpansionServerLabel.TextTruncate = Enum.TextTruncate.AtEnd
-	ExpansionServerLabel.Parent = Card
-
 	AreaStatusLabel = Instance.new("TextLabel")
-	AreaStatusLabel.Size = UDim2.new(1, -20, 0, 16)
-	AreaStatusLabel.Position = UDim2.new(0, 10, 0, 80)
+	AreaStatusLabel.Size = UDim2.new(1, -20, 0, 18)
+	AreaStatusLabel.Position = UDim2.new(0, 10, 0, 46)
 	AreaStatusLabel.BackgroundTransparency = 1
 	AreaStatusLabel.Text = T("WaitingCharacter")
 	AreaStatusLabel.TextColor3 = Color3.fromRGB(205, 170, 175)
 	AreaStatusLabel.Font = Enum.Font.Gotham
-	AreaStatusLabel.TextSize = 9
+	AreaStatusLabel.TextSize = 11
 	AreaStatusLabel.TextXAlignment = Enum.TextXAlignment.Left
 	AreaStatusLabel.TextTruncate = Enum.TextTruncate.AtEnd
 	AreaStatusLabel.Parent = Card
 
-	ExpansionHintLabel = Instance.new("TextLabel")
-	ExpansionHintLabel.Size = UDim2.new(1, -20, 0, 14)
-	ExpansionHintLabel.Position = UDim2.new(0, 10, 0, 97)
-	ExpansionHintLabel.BackgroundTransparency = 1
-	ExpansionHintLabel.Text = T("ExpansionHint")
-	ExpansionHintLabel.TextColor3 = Color3.fromRGB(145, 115, 120)
-	ExpansionHintLabel.Font = Enum.Font.Gotham
-	ExpansionHintLabel.TextSize = 8
-	ExpansionHintLabel.TextXAlignment = Enum.TextXAlignment.Left
-	ExpansionHintLabel.TextTruncate = Enum.TextTruncate.AtEnd
-	ExpansionHintLabel.Parent = Card
-
 	AreaMonitorButton = Instance.new("TextButton")
 	AreaMonitorButton.Size = UDim2.new(0.48, -6, 0, 25)
-	AreaMonitorButton.Position = UDim2.new(0, 10, 0, 117)
+	AreaMonitorButton.Position = UDim2.new(0, 10, 0, 72)
 	AreaMonitorButton.BackgroundColor3 = AreaMonitorEnabled and Color3.fromRGB(145, 20, 35) or Color3.fromRGB(50, 20, 25)
 	AreaMonitorButton.Text = AreaMonitorEnabled and T("MonitorOn") or T("MonitorOff")
 	AreaMonitorButton.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -2165,7 +2519,7 @@ local function CreateAreaMonitorCard()
 
 	local ScanButton = Instance.new("TextButton")
 	ScanButton.Size = UDim2.new(0.48, -6, 0, 25)
-	ScanButton.Position = UDim2.new(0.52, 0, 0, 117)
+	ScanButton.Position = UDim2.new(0.52, 0, 0, 72)
 	ScanButton.BackgroundColor3 = Color3.fromRGB(75, 18, 28)
 	ScanButton.Text = T("Scan")
 	ScanButton.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -2176,7 +2530,8 @@ local function CreateAreaMonitorCard()
 
 	Connect(AreaMonitorButton.Activated, function()
 		AreaMonitorEnabled = not AreaMonitorEnabled
-		Config.AreaMonitor = AreaMonitorEnabled
+		Config.LiveMonitor = AreaMonitorEnabled
+		Config.LiveMonitorSet = true
 		QueueAutoSave()
 		AreaMonitorButton.Text = AreaMonitorEnabled and T("MonitorOn") or T("MonitorOff")
 		AreaMonitorButton.BackgroundColor3 = AreaMonitorEnabled and Color3.fromRGB(145, 20, 35) or Color3.fromRGB(50, 20, 25)
@@ -2196,6 +2551,10 @@ local syncShad = CreateToggleCard("RemoveShadows", T("RemoveShadows"), T("Remove
 local syncFx = CreateFxSliderCard()
 local syncDist = CreateRenderDistanceCard()
 local syncEng = CreateEngineQualityCard()
+local syncFarView = CreateToggleCard("KeepFarView", T("FarViewTitle"), T("FarViewDesc"), Config.KeepFarView, function(s)
+	Config.KeepFarView = s == true
+	SetEngineQualityLevel(Config.EngineQuality)
+end)
 local syncTerr = CreateToggleCard("LiteTerrain", T("LiteTerrain"), T("LiteTerrainDesc"), Config.LiteTerrain, function(s) SetLiteTerrain(s) end)
 local syncSky = CreateSkyCard()
 local syncArea = CreateAreaMonitorCard()
@@ -2251,30 +2610,72 @@ local function ExecutorHttpGet(url)
 	return nil, tostring(body or "HTTP request unavailable")
 end
 
--- ---------- Re-run after teleport (Pistonware-style) ----------
--- queue_on_teleport + LocalPlayer.OnTeleport ONLY re-run the script in the next server; they do not pick a server.
--- Picking the new server is done by FetchPublicServerCandidates() + TeleportToPlaceInstance (see the hop button).
--- Hooking OnTeleport means the script also survives teleports the GAME starts (lobby -> match, rejoin, Roblox UI hop...).
-local RELOAD_FILE_NAME = "VampireOptimizer_V7_3.lua"
+-- ---------- Re-run after teleport (self-installing, Cat/Vape-style) ----------
+-- Cat Vape does not need an outside app: it writes its own files into the executor workspace, and when a teleport starts it
+-- queues a tiny script that loads them again in the next server. This does the same:
+--   1. Persist.Install() keeps a copy of THIS script at workspace/VampireOptimizer/main.lua (source text comes from the loader
+--      at the top of the file, VampireOptimizerSource).
+--   2. LocalPlayer.OnTeleport (fires for ANY teleport, including game-started ones such as lobby -> match) saves settings and
+--      calls queue_on_teleport with a small stub that reads that copy back.
+--   3. If the executor has no file API, the full source is embedded inside the queued stub instead.
+-- Picking a NEW server is still done by FetchPublicServerCandidates() + TeleportToPlaceInstance (see the hop button).
+local Persist = { Dir = "VampireOptimizer" }
+Persist.Flag = Persist.Dir .. "/disabled.flag"
+local RELOAD_FILE_NAME = Persist.Dir .. "/main.lua"
 local TeleportQueued = false
 
-local function QueueReinjectIfConfigured(reason)
-	if Config.TeleportPersist == false then return false, "Re-run after teleport is OFF" end
-	if TeleportQueued then return true, "already queued" end
-	local rawUrl = tostring(Config.ReloadUrl or ""):gsub("^%s*(.-)%s*$", "%1")
-	local hasLocalFile = false
+function Persist.HasFiles()
+	return type(writefile) == "function" and type(readfile) == "function" and type(isfile) == "function"
+end
+
+-- Full source text of this script, provided by the loader (nil when the raw, unwrapped file was executed).
+function Persist.Source()
+	local source
+	pcall(function() source = PersistentEnv.VampireOptimizerSource end)
+	if type(source) ~= "string" then pcall(function() source = shared.VampireOptimizerSource end) end
+	if type(source) == "string" and #source > 1000 then return source end
+	return nil
+end
+
+function Persist.EnsureDir()
 	pcall(function()
-		hasLocalFile = type(isfile) == "function" and type(readfile) == "function" and isfile(RELOAD_FILE_NAME) == true
+		if type(makefolder) == "function" and type(isfolder) == "function" and not isfolder(Persist.Dir) then
+			makefolder(Persist.Dir)
+		end
 	end)
-	if rawUrl == "" and not hasLocalFile then
-		return false, "No reload source: set a raw URL or save " .. RELOAD_FILE_NAME .. " in the executor workspace"
+end
+
+-- Writes/refreshes the workspace copy. Returns true when a readable copy exists afterwards.
+function Persist.Install()
+	if not Persist.HasFiles() then return false, "executor has no file API" end
+	Persist.EnsureDir()
+	local source = Persist.Source()
+	local current
+	pcall(function() if isfile(RELOAD_FILE_NAME) then current = readfile(RELOAD_FILE_NAME) end end)
+	if source and current ~= source then
+		local ok, err = pcall(writefile, RELOAD_FILE_NAME, source)
+		if not ok then return false, tostring(err) end
+		pcall(function() if isfile(RELOAD_FILE_NAME) then current = readfile(RELOAD_FILE_NAME) end end)
 	end
-	local queueFn = ResolveQueueOnTeleport()
-	if type(queueFn) ~= "function" then return false, "Executor has no queue_on_teleport" end
-	local okJson, configJson = pcall(function() return HttpService:JSONEncode(Config) end)
-	if not okJson then return false, "Could not encode saved settings" end
-	local bootstrap = string.format([[
-local configJson, reloadUrl, reloadFile = %q, %q, %q
+	if type(current) == "string" and #current > 1000 then return true end
+	return false, source and "could not write the workspace copy" or "script source unavailable (run the single-file version)"
+end
+
+-- Lua long-bracket literal for arbitrary text (picks a level that does not clash with the text).
+function Persist.LongString(text)
+	local level = 2
+	while text:find("]" .. string.rep("=", level) .. "]", 1, true) or text:find("[" .. string.rep("=", level) .. "[", 1, true) do
+		level = level + 1
+	end
+	local eq = string.rep("=", level)
+	return "[" .. eq .. "[\n" .. text .. "\n]" .. eq .. "]"
+end
+
+-- The script handed to queue_on_teleport. It runs in the NEXT server, so it must be fully self-contained.
+function Persist.BuildStub(embeddedSource, rawUrl, configJson)
+	local header = string.format("local MAIN_FILE, FLAG_FILE, RELOAD_URL, CONFIG_JSON = %q, %q, %q, %q", RELOAD_FILE_NAME, Persist.Flag, rawUrl, configJson)
+	local embedded = "local EMBEDDED = " .. (embeddedSource and Persist.LongString(embeddedSource) or "nil")
+	local body = [[
 if not game:IsLoaded() then game.Loaded:Wait() end
 local Players = game:GetService("Players")
 while not Players.LocalPlayer do task.wait() end
@@ -2282,44 +2683,75 @@ task.wait(1.5)
 local env = shared
 pcall(function() if type(getgenv) == "function" then env = getgenv() end end)
 if shared.VampireOptimizerDisabled or env.VampireOptimizerDisabled then return end
+local disabled = false
 pcall(function()
-  local cfg = game:GetService("HttpService"):JSONDecode(configJson)
+  if type(isfile) == "function" and type(readfile) == "function" and isfile(FLAG_FILE) and readfile(FLAG_FILE) == "1" then disabled = true end
+end)
+if disabled then return end
+pcall(function()
+  local cfg = game:GetService("HttpService"):JSONDecode(CONFIG_JSON)
   shared.VampireOptimizerConfig = cfg
   env.VampireOptimizerConfig = cfg
 end)
 local source
-if reloadUrl ~= "" then
-  local ok, body = pcall(function() return game:HttpGet(reloadUrl, true) end)
-  if ok and type(body) == "string" and body ~= "" then source = body end
+if RELOAD_URL ~= "" then
+  local ok, body = pcall(function() return game:HttpGet(RELOAD_URL, true) end)
+  if ok and type(body) == "string" and #body > 1000 then source = body end
 end
-if not source and reloadFile ~= "" and type(isfile) == "function" and type(readfile) == "function" then
-  local ok, body = pcall(function() if isfile(reloadFile) then return readfile(reloadFile) end end)
-  if ok and type(body) == "string" and body ~= "" then source = body end
+if not source and type(isfile) == "function" and type(readfile) == "function" then
+  local ok, body = pcall(function() if isfile(MAIN_FILE) then return readfile(MAIN_FILE) end end)
+  if ok and type(body) == "string" and #body > 1000 then source = body end
 end
+if not source and EMBEDDED then source = EMBEDDED end
 if not source then warn("[Vampire Optimizer] No reload source available after teleport") return end
-local chunk, compileError = loadstring(source)
-if not chunk then warn(compileError) return end
+local chunk, compileError = loadstring(source, "VampireOptimizer")
+if not chunk then warn("[Vampire Optimizer] " .. tostring(compileError)) return end
 shared.VampireOptimizerReload = true
 pcall(function() env.VampireOptimizerReload = true end)
+pcall(function() shared.VampireOptimizerSource = source end)
+pcall(function() env.VampireOptimizerSource = source end)
 local ran, runError = pcall(chunk)
-if not ran then warn(runError) end
-]], configJson, rawUrl, RELOAD_FILE_NAME)
-	local queued, queueErr = pcall(queueFn, bootstrap)
+if not ran then warn("[Vampire Optimizer] " .. tostring(runError)) end
+]]
+	return header .. "\n" .. embedded .. "\n" .. body
+end
+
+local function QueueReinjectIfConfigured(reason)
+	if Config.TeleportPersist == false then return false, "Re-run after teleport is OFF" end
+	if TeleportQueued then return true, "already queued" end
+	local queueFn = ResolveQueueOnTeleport()
+	if type(queueFn) ~= "function" then return false, "Executor has no queue_on_teleport" end
+	pcall(SaveConfig) -- like vape:Save() right before queue_on_teleport: the next server starts with the newest settings
+	local okJson, configJson = pcall(function() return HttpService:JSONEncode(Config) end)
+	if not okJson then return false, "Could not encode saved settings" end
+	local rawUrl = tostring(Config.ReloadUrl or ""):gsub("^%s*(.-)%s*$", "%1")
+	local installed = Persist.Install()
+	local embedded
+	if not installed then
+		embedded = Persist.Source() -- no usable workspace copy: carry the whole script inside the queued stub
+		if not embedded and rawUrl == "" then
+			return false, "No script source to re-run: execute the single-file VampireOptimizer script"
+		end
+	end
+	local queued, queueErr = pcall(queueFn, Persist.BuildStub(embedded, rawUrl, configJson))
 	if not queued then return false, tostring(queueErr) end
 	TeleportQueued = true
 	return true, reason or "queued"
 end
 
--- Any teleport (ours or the game's): queue once when it starts, allow queuing again if Roblox reports a failure.
 local function DescribeExecutor()
 	local name = "unknown executor"
 	pcall(function() if type(identifyexecutor) == "function" then name = tostring((identifyexecutor())) end end)
 	local function yn(value) return value and "OK" or "NO" end
 	local hasQueue = type(ResolveQueueOnTeleport()) == "function"
-	local hasFiles = type(readfile) == "function" and type(writefile) == "function" and type(isfile) == "function"
+	local hasFiles = Persist.HasFiles()
 	local hasHttp = type(request) == "function" or type(http_request) == "function"
 	pcall(function() if type(game.HttpGet) == "function" then hasHttp = true end end)
-	return string.format("%s | queue_on_teleport: %s | files: %s | http: %s", name, yn(hasQueue), yn(hasFiles), yn(hasHttp))
+	local autoRun = "OFF"
+	if Config.TeleportPersist ~= false then
+		if Persist.Install() then autoRun = "FILE" elseif Persist.Source() then autoRun = "EMBED" else autoRun = "NO" end
+	end
+	return string.format("%s | queue_on_teleport: %s | files: %s | http: %s | auto-run: %s | fflag: %s", name, yn(hasQueue), yn(hasFiles), yn(hasHttp), autoRun, yn(FrmFlag.Setter() ~= nil))
 end
 local ExecutorReport = DescribeExecutor()
 pcall(function() print("[Vampire Optimizer] " .. ExecutorReport) end)
@@ -2454,7 +2886,7 @@ local function CreateServerHopCard()
     ReloadUrlBox.Position = UDim2.new(0, 10, 0, 139)
     ReloadUrlBox.BackgroundColor3 = Color3.fromRGB(40, 15, 20)
     ReloadUrlBox.Text = Config.ReloadUrl
-    ReloadUrlBox.PlaceholderText = "Raw Lua URL (optional) — empty = use workspace/" .. RELOAD_FILE_NAME
+    ReloadUrlBox.PlaceholderText = "Raw Lua URL (optional) — empty = auto, uses workspace/" .. RELOAD_FILE_NAME
     ReloadUrlBox.PlaceholderColor3 = Color3.fromRGB(150, 90, 100)
     ReloadUrlBox.TextColor3 = Color3.fromRGB(215, 195, 200)
     ReloadUrlBox.Font = Enum.Font.Gotham
@@ -2573,13 +3005,15 @@ end
 Connect(UIList:GetPropertyChangedSignal("AbsoluteContentSize"), UpdateCanvas)
 task.defer(UpdateCanvas)
 
--- Quét vùng đã stream mỗi 6 giây khi người chơi bật Theo Dõi.
--- Vòng lặp tự dừng khi bấm X.
+-- V7.4: Theo dõi tự động. Mặc định BẬT, quét mỗi 3 giây khi menu đang mở (1 giây một lần cho tới khi nhân vật xuất hiện).
+-- Menu đang thu nhỏ/ẩn thì tạm dừng quét để không tốn CPU. Vòng lặp tự dừng khi bấm X.
 task.spawn(function()
 	while IsRunning do
-		if AreaMonitorEnabled then
-			RefreshAreaStatus()
-			task.wait(6)
+		if AreaMonitorEnabled and MainFrame.Visible then
+			pcall(RefreshAreaStatus)
+			local character = LocalPlayer.Character
+			local hasRoot = character and character:FindFirstChild("HumanoidRootPart")
+			task.wait(hasRoot and 3 or 1)
 		else
 			task.wait(1)
 		end
@@ -2587,10 +3021,18 @@ task.spawn(function()
 end)
 
 -- TÌM KIẾM THEO TÊN
+-- V7.4: tìm theo cả tên thẻ lẫn chữ đang hiển thị (nên vẫn đúng sau khi đổi ngôn ngữ); tìm văn bản thuần, không lỗi pattern.
+local function CardSearchText(card)
+	local parts = { card.Name }
+	for _, d in ipairs(card:GetDescendants()) do
+		if d:IsA("TextLabel") then table.insert(parts, d.Text) end
+	end
+	return string.lower(table.concat(parts, " "))
+end
 Connect(SearchBox:GetPropertyChangedSignal("Text"), function()
 	local q = string.lower(SearchBox.Text)
 	for _, card in ipairs(allCards) do
-		card.Visible = (q == "") or (string.find(string.lower(card.Name), q) ~= nil)
+		card.Visible = (q == "") or (string.find(CardSearchText(card), q, 1, true) ~= nil)
 	end
 	UpdateCanvas()
 end)
@@ -2606,17 +3048,24 @@ local function SetMenuVisible(v)
 end
 
 -- Nút X: khôi phục trạng thái ban đầu, ngắt mọi event, xóa GUI và dừng script.
-local function Shutdown()
+local function Shutdown(byUser)
 	if not IsRunning then return end
 	IsRunning = false
 
 	-- X = the user wants the script gone: stop the post-teleport bootstrap from reviving it.
 	pcall(function() shared.VampireOptimizerDisabled = true end)
 	pcall(function() PersistentEnv.VampireOptimizerDisabled = true end)
+	if byUser == true then -- the flag file survives the server change, so a queued stub will not revive a script the user closed
+		pcall(function()
+			if type(writefile) == "function" then
+				Persist.EnsureDir()
+				writefile(Persist.Flag, "1")
+			end
+		end)
+	end
 
-	-- Chỉ tắt bộ theo dõi ở client; không gửi lệnh thay đổi trạng thái server.
-	AreaMonitorEnabled = false
-	Config.AreaMonitor = false
+	-- V7.4: vòng lặp Theo dõi tự dừng nhờ IsRunning = false. KHÔNG ghi LiveMonitor = false nữa
+	-- (trước đây mỗi lần chạy lại script / sang map mới đều lưu Theo dõi = TẮT).
 	pcall(SaveConfig)
 
 	pcall(RestoreAllGraphics)
@@ -2645,7 +3094,7 @@ end
 
 Connect(ToggleButton.Activated, function() SetMenuVisible(not MainFrame.Visible) end)
 Connect(MinBtn.Activated, function() SetMenuVisible(false) end)
-Connect(CloseBtn.Activated, function() Shutdown() end)
+Connect(CloseBtn.Activated, function() Shutdown(true) end)
 
 -- NÚT KHÔI PHỤC TOÀN BỘ ĐỒ HỌA GỐC
 Connect(RestoreBtn.Activated, function()
@@ -2727,6 +3176,94 @@ Connect(workspace.DescendantAdded, function(v)
 	end)
 end)
 
+-- ==================== V7.4: ĐỔI NGÔN NGỮ TRỰC TIẾP THEO ROBLOX ====================
+-- Trước đây ngôn ngữ chỉ đọc 1 lần lúc chạy script. Giờ: theo dõi LocaleId / RobloxLocaleId (sự kiện + kiểm tra mỗi 1 giây),
+-- khi đổi thì dịch lại toàn bộ chữ trên menu ngay lập tức, không cần chạy lại script.
+do
+	local function ResolveLocaleCode(raw)
+		raw = string.lower((tostring(raw or ""):gsub("_", "-")))
+		local base = raw:match("^([a-z]+)")
+		if not base then return nil end
+		if base == "zh" then
+			if raw:find("zh%-tw") or raw:find("zh%-hk") or raw:find("zh%-mo") then return "zhTW" end
+			return "zhCN"
+		end
+		if Lang[base] then return base end
+		return nil
+	end
+
+	local function ReadRaw(which)
+		local value
+		pcall(function()
+			if which == 1 then value = LocalPlayer.LocaleId else value = LocalizationService.RobloxLocaleId end
+		end)
+		if type(value) == "string" and value ~= "" then return value end
+		return nil
+	end
+
+	-- chữ đang hiển thị (ngôn ngữ cũ) -> khóa dịch
+	local function BuildReverse(locale)
+		local rev = {}
+		local set = Lang[locale]
+		for key, enText in pairs(Lang.en) do
+			local text = (set and set[key]) or enText
+			if type(text) == "string" and rev[text] == nil then rev[text] = key end
+		end
+		if set then
+			for key, text in pairs(set) do
+				if type(text) == "string" and rev[text] == nil then rev[text] = key end
+			end
+		end
+		return rev
+	end
+
+	local function Retranslate(oldLocale)
+		local rev = BuildReverse(oldLocale)
+		local function walk(root)
+			if not root then return end
+			for _, inst in ipairs(root:GetDescendants()) do
+				if inst:IsA("TextBox") then
+					local key = rev[inst.PlaceholderText]
+					if key then inst.PlaceholderText = T(key) end
+				elseif inst:IsA("TextLabel") or inst:IsA("TextButton") then
+					local key = rev[inst.Text]
+					if key then inst.Text = T(key) end
+				end
+			end
+		end
+		walk(ScreenGui)
+		walk(ToggleGui)
+		TitleLabel.Text = "❖ " .. T("Title")
+		pcall(function() MainFrame:SetAttribute("UILanguage", currentLocale) end)
+		pcall(RefreshAreaStatus) -- dòng thống kê có số liệu nên dựng lại bằng ngôn ngữ mới
+	end
+
+	local lastPlayerLocale, lastCoreLocale = ReadRaw(1), ReadRaw(2)
+	local function CheckLocale()
+		local playerLocale, coreLocale = ReadRaw(1), ReadRaw(2)
+		local chosen = nil
+		if playerLocale ~= lastPlayerLocale then chosen = playerLocale
+		elseif coreLocale ~= lastCoreLocale then chosen = coreLocale end
+		lastPlayerLocale, lastCoreLocale = playerLocale, coreLocale
+		if not chosen then return end
+		local newLocale = ResolveLocaleCode(chosen)
+		if not newLocale or newLocale == currentLocale then return end
+		local oldLocale = currentLocale
+		currentLocale = newLocale
+		local ok, err = pcall(Retranslate, oldLocale)
+		if not ok then warn("[Vampire Optimizer] Language switch failed: " .. tostring(err)) end
+	end
+
+	pcall(function() Connect(LocalPlayer:GetPropertyChangedSignal("LocaleId"), CheckLocale) end)
+	pcall(function() Connect(LocalizationService:GetPropertyChangedSignal("RobloxLocaleId"), CheckLocale) end)
+	task.spawn(function()
+		while IsRunning do
+			task.wait(1)
+			if IsRunning then pcall(CheckLocale) end
+		end
+	end)
+end
+
 -- KHỞI CHẠY TOÀN BỘ CẤU HÌNH ĐÃ LƯU. Mỗi phần chạy trong pcall riêng để một lỗi không chặn các phần còn lại.
 local function SafeApplySaved(label, callback)
 	local ok, err = pcall(callback)
@@ -2750,3 +3287,18 @@ if IsReloadRun then pcall(SetMenuVisible, false) end -- silent re-run after a te
 local RuntimeHandle = { Stop = Shutdown }
 pcall(function() PersistentEnv.VampireOptimizerRuntime = RuntimeHandle end)
 pcall(function() shared.VampireOptimizerRuntime = RuntimeHandle end)
+]==]
+
+do
+	local env = shared
+	pcall(function() if type(getgenv) == "function" then env = getgenv() end end)
+	pcall(function() shared.VampireOptimizerSource = VAMPIRE_SOURCE end)
+	pcall(function() env.VampireOptimizerSource = VAMPIRE_SOURCE end)
+end
+
+local chunk, compileError = loadstring(VAMPIRE_SOURCE, "VampireOptimizer")
+if not chunk then
+	warn("[Vampire Optimizer] compile error: " .. tostring(compileError))
+	return
+end
+return chunk()
