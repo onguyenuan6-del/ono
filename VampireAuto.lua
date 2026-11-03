@@ -1,18 +1,18 @@
 -- ====================================================================
---   VAMPIRE OPTIMIZER V7.8.2 - HOTKEY TOGGLE FIX (LEGO ALWAYS VISIBLE)
+--   VAMPIRE OPTIMIZER V7.8.3 - HOTKEY TOGGLE FIX (LEGO ALWAYS VISIBLE)
 --   Paste this ONE file into the executor. Nothing else is needed (no URL, no outside app, no manual file):
 --     * it saves its own copy to workspace/VampireOptimizer/main.lua
 --     * when ANY teleport starts (lobby -> match, rejoin, server hop) it queues a small stub, like Cat Vape,
 --       which loads that copy again in the next server.
 --   Pressing X in the menu stops it for good (until you execute it again).
---   V7.8.2: Hotkey ẩn/hiện CẢ menu + Lego (script vẫn chạy). Nút - / click Lego chỉ ẩn menu.
+--   V7.8.3: Hotkey ẩn/hiện CẢ menu + Lego (script vẫn chạy). Nút - / click Lego chỉ ẩn menu.
 --           ToggleKey lưu dạng string để persist đúng sau restart.
 -- ====================================================================
 
 local VAMPIRE_SOURCE = [==[
 -- ====================================================================
---   VAMPIRE OPTIMIZER V7.8.2
---   V7.8.2: Hotkey hides menu+Lego; custom vampire icon; ToggleKey JSON fix.
+--   VAMPIRE OPTIMIZER V7.8.3
+--   V7.8.3: Hotkey hides menu+Lego; custom vampire icon; ToggleKey JSON fix.
 --   V7.8.1: Fixed Top Border rounded corner bug, changed floating icon to a Lego Brick.
 -- ====================================================================
 
@@ -92,7 +92,7 @@ end
 
 local Lang = {
 	vi = {
-		Title="VAMPIRE OPTIMIZER V7.8.2", Search="Tìm kiếm tính năng...", Restore="Khôi phục đồ họa gốc", Save="Lưu cấu hình",
+		Title="VAMPIRE OPTIMIZER V7.8.3", Search="Tìm kiếm tính năng...", Restore="Khôi phục đồ họa gốc", Save="Lưu cấu hình",
 		FlatPlastic="Làm phẳng vật liệu (Nhựa)", FlatPlasticDesc="Đổi bề mặt sang nhựa; bỏ qua khối Lucky",
 		RemoveTextures="Ẩn Texture và Decal", RemoveTexturesDesc="Ẩn texture và decal trên bề mặt",
 		RemoveShadows="Tắt bóng đổ", RemoveShadowsDesc="Tắt bóng của vật thể để giảm tải đồ họa",
@@ -114,12 +114,12 @@ local Lang = {
 		ServerHopTitle="Đổi server công khai ngẫu nhiên", ServerHopDesc="Gửi yêu cầu Roblox matchmaking vào một phiên công khai của game hiện tại.", ServerHopButton="ĐỔI SERVER", ServerHopCopy="SAO CHÉP LINK SERVER", ServerHopCooldown="Vui lòng đợi trước khi thử lại.", ServerHopCopied="Đã sao chép link server.", ServerHopCopyManual="Không có clipboard API; mở link thủ công.", 
         On="BẬT", Off="TẮT", WaitingCharacter="Đang chờ nhân vật...",
         HotkeyTitle="Phím tắt ẩn/hiện UI", HotkeyDesc="Bấm vào nút để đổi phím tắt. Mặc định: Không có.", HotkeyNone="KHÔNG CÓ", HotkeyWaiting="ĐANG CHỜ PHÍM...", HotkeyClear="XÓA PHÍM",
-        StartHiddenTitle="Ẩn menu khi khởi động", StartHiddenDesc="Menu sẽ không tự mở ra khi chạy script (chỉ hiện nút nổi).",
+        StartHiddenTitle="Ẩn menu khi khởi động", StartHiddenDesc="Không tự mở menu. Có hotkey: ẩn cả nút nổi (bấm hotkey để mở). Không hotkey: chỉ hiện nút nổi.",
         FloatSeeThroughTitle="Nút nổi xuyên thấu", FloatSeeThroughDesc="Nút tròn bóng mờ, vẫn nhìn thấy chữ và thông báo game phía sau",
         FloatDragHint="Kéo nút nổi để đổi vị trí (tự lưu, không vượt màn hình)",
 	},
 	en = {
-		Title="VAMPIRE OPTIMIZER V7.8.2", Search="Search features...", Restore="Restore original graphics", Save="Save settings",
+		Title="VAMPIRE OPTIMIZER V7.8.3", Search="Search features...", Restore="Restore original graphics", Save="Save settings",
 		FlatPlastic="Flat materials (Plastic)", FlatPlasticDesc="Convert surfaces to plastic; skips Lucky blocks",
 		RemoveTextures="Hide textures and decals", RemoveTexturesDesc="Hide surface textures and decals",
 		RemoveShadows="Disable shadows", RemoveShadowsDesc="Disable object shadows to reduce graphics load",
@@ -141,7 +141,7 @@ local Lang = {
 		ServerHopTitle="Random public server hop", ServerHopDesc="Ask Roblox matchmaking to place you in a public session of this experience.", ServerHopButton="HOP SERVER", ServerHopCopy="COPY SERVER LIST LINK", ServerHopCooldown="Please wait before trying again.", ServerHopCopied="Server list link copied.", ServerHopCopyManual="Clipboard API unavailable; open the link manually.", 
         On="ON", Off="OFF", WaitingCharacter="Waiting for character...",
         HotkeyTitle="Toggle UI Hotkey", HotkeyDesc="Click the button to set a hotkey. Default: None.", HotkeyNone="NONE", HotkeyWaiting="WAITING FOR KEY...", HotkeyClear="CLEAR KEY",
-        StartHiddenTitle="Start hidden", StartHiddenDesc="Menu won't open automatically on startup (float button only).",
+        StartHiddenTitle="Start hidden", StartHiddenDesc="Don't auto-open menu. With hotkey: hide float too (press hotkey to open). No hotkey: float button only.",
         FloatSeeThroughTitle="See-through float button", FloatSeeThroughDesc="Soft circular translucent button; game text/notifications stay readable",
         FloatDragHint="Drag the float button to move it (auto-saved, stays on screen)",
 	}
@@ -415,8 +415,17 @@ local function SetFlatPlastic(enable)
 			end
 			for _, v in ipairs(workspace:GetDescendants()) do
 				if v:IsA("BasePart") and not isLucky(v) and v.MaterialVariant == "" then
-					if Backup.OriginalMaterials[v] == nil then Backup.OriginalMaterials[v] = v.Material end
-					v.Material = Enum.Material.SmoothPlastic
+					-- Bỏ qua body nhân vật / tool trên tay
+					local skip = false
+					pcall(function()
+						local model = v:FindFirstAncestorOfClass("Model")
+						if model and Players:GetPlayerFromCharacter(model) then skip = true end
+						if v:FindFirstAncestorOfClass("Tool") or v:FindFirstAncestorOfClass("Accessory") then skip = true end
+					end)
+					if not skip then
+						if Backup.OriginalMaterials[v] == nil then Backup.OriginalMaterials[v] = v.Material end
+						v.Material = Enum.Material.SmoothPlastic
+					end
 				end
 			end
 		else
@@ -1720,6 +1729,11 @@ end
 
 RestoreFloatPosition()
 ApplyFloatSeeThrough(Config.FloatSeeThrough)
+-- Tránh hiện nút nổi flash sau TP nếu StartHidden + đã có hotkey
+if (IsReloadRun or Config.StartHidden) and Config.ToggleKey ~= nil then
+	ToggleButton.Visible = false
+	ToggleButton.Active = false
+end
 
 -- Kéo thả chuẩn: dùng Position.Offset (cùng hệ với IgnoreGuiInset) + GetMouseLocation
 -- để không bị lệch GuiInset (trước phải kéo tụt xuống mới đúng).
@@ -1819,6 +1833,7 @@ MainFrame.BorderSizePixel = 0
 MainFrame.ClipsDescendants = false -- Tắt tính năng này để không cắt viền UIStroke
 MainFrame.Active = true
 MainFrame.Draggable = true
+MainFrame.Visible = false -- tránh flash menu sau TP; ApplyStartVisibility quyết định sau
 MainFrame.Parent = ScreenGui
 
 local MainCorner = Instance.new("UICorner")
@@ -1853,6 +1868,8 @@ TitleLabel.TextColor3 = Color3.fromRGB(255, 65, 80)
 TitleLabel.Font = Enum.Font.GothamBold
 TitleLabel.TextSize = 15
 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+TitleLabel.TextEditable = false
+TitleLabel.Active = false
 TitleLabel.Parent = TitleBar
 
 local MinBtn = Instance.new("TextButton")
@@ -3248,24 +3265,30 @@ end)
 -- hideFloat=false → chỉ ẩn menu, giữ Lego (dùng cho nút - / click Lego)
 SetMenuVisible = function(v, hideFloat)
 	isOpen = (v == true)
-	if ScreenGui then ScreenGui.Enabled = true end
+	pcall(function()
+		if ScreenGui then
+			ScreenGui.Enabled = true
+			if ParentTarget and ScreenGui.Parent ~= ParentTarget then
+				ScreenGui.Parent = ParentTarget
+			end
+		end
+	end)
 	if MainFrame then MainFrame.Visible = isOpen end
-	if ToggleGui then
-		pcall(function() ToggleGui.Parent = ParentTarget end)
+	pcall(function()
+		if ToggleGui then
+			ToggleGui.Enabled = true
+			if ParentTarget and ToggleGui.Parent ~= ParentTarget then
+				ToggleGui.Parent = ParentTarget
+			end
+		end
+	end)
+	if ToggleButton then
 		if hideFloat and not isOpen then
-			-- Hotkey ẩn: giấu luôn nút Lego, nhưng KHÔNG destroy / KHÔNG Shutdown
-			ToggleGui.Enabled = true
-			if ToggleButton then
-				ToggleButton.Visible = false
-				ToggleButton.Active = false
-			end
+			ToggleButton.Visible = false
+			ToggleButton.Active = false
 		else
-			-- Hiện lại hoặc minimize thường: Lego luôn sẵn
-			ToggleGui.Enabled = true
-			if ToggleButton then
-				ToggleButton.Visible = true
-				ToggleButton.Active = true
-			end
+			ToggleButton.Visible = true
+			ToggleButton.Active = true
 		end
 	end
 end
@@ -3371,8 +3394,16 @@ Connect(workspace.DescendantAdded, function(v)
 			v.CastShadow = false
 		end
 		if Config.FlatPlastic and v:IsA("BasePart") and not isLucky(v) and v.MaterialVariant == "" then
-			if Backup.OriginalMaterials[v] == nil then Backup.OriginalMaterials[v] = v.Material end
-			v.Material = Enum.Material.SmoothPlastic
+			local skip = false
+			pcall(function()
+				local model = v:FindFirstAncestorOfClass("Model")
+				if model and Players:GetPlayerFromCharacter(model) then skip = true end
+				if v:FindFirstAncestorOfClass("Tool") or v:FindFirstAncestorOfClass("Accessory") then skip = true end
+			end)
+			if not skip then
+				if Backup.OriginalMaterials[v] == nil then Backup.OriginalMaterials[v] = v.Material end
+				v.Material = Enum.Material.SmoothPlastic
+			end
 		end
 		if Config.FlatHair then ApplyFlatHairObject(v) end
 		if Config.StripClothing and IsRemovableClothing(v) then StripClothingInstance(v) end
@@ -3394,18 +3425,42 @@ SafeApplySaved("LiteTerrain", function() SetLiteTerrain(Config.LiteTerrain) end)
 SafeApplySaved("FlatHair", function() SetFlatHair(true) end)
 SafeApplySaved("StripClothing", function() SetStripClothing(Config.StripClothing) end)
 SafeApplySaved("SkyMode", function() ApplySkyMode(Config.SkyMode) end)
+-- Đồng bộ trạng thái nút UI với Config đã load (tránh lệch ON/OFF sau TP)
+pcall(function()
+	if syncPlast then syncPlast(Config.FlatPlastic == true) end
+	if syncTex then syncTex(Config.RemoveTextures == true) end
+	if syncShad then syncShad(Config.RemoveShadows == true) end
+	if syncFx then syncFx(Config.FxScale or 100) end
+	if syncDist then syncDist(Config.RenderDistance, false) end
+	if syncEng then syncEng(Config.EngineQuality, false) end
+	if syncFarView then syncFarView(Config.KeepFarView == true) end
+	if syncTerr then syncTerr(Config.LiteTerrain == true) end
+	if syncHair then syncHair(Config.FlatHair == true) end
+	if syncStripClothing then syncStripClothing(Config.StripClothing == true) end
+	if syncAutoSave then syncAutoSave(Config.AutoSave == true) end
+	if syncTeleportPersist then syncTeleportPersist(Config.TeleportPersist == true) end
+	if syncStartHidden then syncStartHidden(Config.StartHidden == true) end
+	if syncFloatSeeThrough then syncFloatSeeThrough(Config.FloatSeeThrough ~= false) end
+end)
 StoreConfigInMemory()
 QueueAutoSave()
 
-if IsReloadRun then
-    pcall(SetMenuVisible, false)
-else
-    if Config.StartHidden then
-        pcall(SetMenuVisible, false)
-    else
-        pcall(SetMenuVisible, true)
-    end
+-- Sau TP / khởi động: tôn trọng StartHidden (tránh flash menu + nút nổi).
+local function ApplyStartVisibility()
+	local hasHotkey = Config.ToggleKey ~= nil
+	if IsReloadRun or Config.StartHidden then
+		local hideFloat = hasHotkey or Config.StartHidden
+		pcall(function() SetMenuVisible(false, hideFloat == true) end)
+	else
+		pcall(function() SetMenuVisible(true, false) end)
+	end
 end
+-- Chạy ngay + defer thêm 1 frame (tránh UI khác / teleport stub ghi đè)
+ApplyStartVisibility()
+task.defer(ApplyStartVisibility)
+task.delay(0.35, function()
+	if IsRunning then ApplyStartVisibility() end
+end)
 
 local RuntimeHandle = { Stop = Shutdown }
 pcall(function() PersistentEnv.VampireOptimizerRuntime = RuntimeHandle end)
