@@ -1,18 +1,18 @@
 -- ====================================================================
---   VAMPIRE OPTIMIZER V7.8.3 - HOTKEY TOGGLE FIX (LEGO ALWAYS VISIBLE)
+--   VAMPIRE OPTIMIZER V7.8.2 - HOTKEY TOGGLE FIX (LEGO ALWAYS VISIBLE)
 --   Paste this ONE file into the executor. Nothing else is needed (no URL, no outside app, no manual file):
 --     * it saves its own copy to workspace/VampireOptimizer/main.lua
 --     * when ANY teleport starts (lobby -> match, rejoin, server hop) it queues a small stub, like Cat Vape,
 --       which loads that copy again in the next server.
 --   Pressing X in the menu stops it for good (until you execute it again).
---   V7.8.3: Hotkey ẩn/hiện CẢ menu + Lego (script vẫn chạy). Nút - / click Lego chỉ ẩn menu.
+--   V7.8.2: Hotkey ẩn/hiện CẢ menu + Lego (script vẫn chạy). Nút - / click Lego chỉ ẩn menu.
 --           ToggleKey lưu dạng string để persist đúng sau restart.
 -- ====================================================================
 
 local VAMPIRE_SOURCE = [==[
 -- ====================================================================
---   VAMPIRE OPTIMIZER V7.8.3
---   V7.8.3: Hotkey hides menu+Lego; custom vampire icon; ToggleKey JSON fix.
+--   VAMPIRE OPTIMIZER V7.8.2
+--   V7.8.2: Hotkey hides menu+Lego; custom vampire icon; ToggleKey JSON fix.
 --   V7.8.1: Fixed Top Border rounded corner bug, changed floating icon to a Lego Brick.
 -- ====================================================================
 
@@ -92,7 +92,7 @@ end
 
 local Lang = {
 	vi = {
-		Title="VAMPIRE OPTIMIZER V7.8.3", Search="Tìm kiếm tính năng...", Restore="Khôi phục đồ họa gốc", Save="Lưu cấu hình",
+		Title="VAMPIRE OPTIMIZER V7.8.2", Search="Tìm kiếm tính năng...", Restore="Khôi phục đồ họa gốc", Save="Lưu cấu hình",
 		FlatPlastic="Làm phẳng vật liệu (Nhựa)", FlatPlasticDesc="Đổi bề mặt sang nhựa; bỏ qua khối Lucky",
 		RemoveTextures="Ẩn Texture và Decal", RemoveTexturesDesc="Ẩn texture và decal trên bề mặt",
 		RemoveShadows="Tắt bóng đổ", RemoveShadowsDesc="Tắt bóng của vật thể để giảm tải đồ họa",
@@ -119,7 +119,7 @@ local Lang = {
         FloatDragHint="Kéo nút nổi để đổi vị trí (tự lưu, không vượt màn hình)",
 	},
 	en = {
-		Title="VAMPIRE OPTIMIZER V7.8.3", Search="Search features...", Restore="Restore original graphics", Save="Save settings",
+		Title="VAMPIRE OPTIMIZER V7.8.2", Search="Search features...", Restore="Restore original graphics", Save="Save settings",
 		FlatPlastic="Flat materials (Plastic)", FlatPlasticDesc="Convert surfaces to plastic; skips Lucky blocks",
 		RemoveTextures="Hide textures and decals", RemoveTexturesDesc="Hide surface textures and decals",
 		RemoveShadows="Disable shadows", RemoveShadowsDesc="Disable object shadows to reduce graphics load",
@@ -208,6 +208,7 @@ local Backup = {
 	},
 	InitialEngineQuality = Enum.QualityLevel.Automatic,
 	OriginalMaterials = {},
+	OriginalMaterialVariants = {},
 	OriginalTile = {},
 	OriginalTextures = {},
 	OriginalShadows = {},
@@ -403,47 +404,62 @@ local function isLucky(obj)
 	return false
 end
 
+local function isInCharacter(obj)
+	local cur = obj
+	while cur and cur ~= workspace do
+		if cur:IsA("Model") and cur.Parent == workspace and Players:GetPlayerFromCharacter(cur) then
+			return true
+		end
+		cur = cur.Parent
+	end
+	return false
+end
+
 local function SetFlatPlastic(enable)
 	Config.FlatPlastic = enable
 	task.spawn(function()
 		if enable then
+			-- Make custom MaterialVariants flatter (large tile) without removing them
 			for _, v in ipairs(MaterialService:GetDescendants()) do
 				if v:IsA("MaterialVariant") and not isLucky(v) then
 					if Backup.OriginalTile[v] == nil then Backup.OriginalTile[v] = v.StudsPerTile end
 					pcall(function() v.StudsPerTile = 100000 end)
 				end
 			end
+			-- Only force SmoothPlastic on parts that do NOT have a custom MaterialVariant
+			-- (clearing MaterialVariant turns many textured parts into plain white plastic)
 			for _, v in ipairs(workspace:GetDescendants()) do
-				if v:IsA("BasePart") and not isLucky(v) and v.MaterialVariant == "" then
-					-- Bỏ qua body nhân vật / tool trên tay
-					local skip = false
-					pcall(function()
-						local model = v:FindFirstAncestorOfClass("Model")
-						if model and Players:GetPlayerFromCharacter(model) then skip = true end
-						if v:FindFirstAncestorOfClass("Tool") or v:FindFirstAncestorOfClass("Accessory") then skip = true end
-					end)
-					if not skip then
-						if Backup.OriginalMaterials[v] == nil then Backup.OriginalMaterials[v] = v.Material end
-						v.Material = Enum.Material.SmoothPlastic
+				if v:IsA("BasePart") and not isLucky(v) and not isInCharacter(v) then
+					local mv = ""
+					pcall(function() mv = v.MaterialVariant end)
+					if mv == nil or mv == "" then
+						if Backup.OriginalMaterials[v] == nil then
+							Backup.OriginalMaterials[v] = v.Material
+						end
+						if Backup.OriginalMaterialVariants[v] == nil then
+							Backup.OriginalMaterialVariants[v] = mv
+						end
+						pcall(function()
+							v.Material = Enum.Material.SmoothPlastic
+						end)
 					end
 				end
 			end
 		else
+			-- Restore Material and MaterialVariant
 			for part, mat in pairs(Backup.OriginalMaterials) do
 				if part and part.Parent then
 					pcall(function()
-						if type(mat) == "table" then
-							part.Material = mat.Material
-							if mat.MaterialVariant ~= nil then part.MaterialVariant = mat.MaterialVariant end
-							if mat.Reflectance ~= nil then part.Reflectance = mat.Reflectance end
-						else
-							part.Material = mat
-						end
+						part.Material = mat
+						local mv = Backup.OriginalMaterialVariants[part]
+						if mv ~= nil then part.MaterialVariant = mv end
 					end)
 				end
 			end
 			for variant, tile in pairs(Backup.OriginalTile) do
-				if variant and variant.Parent then variant.StudsPerTile = tile end
+				if variant and variant.Parent then
+					pcall(function() variant.StudsPerTile = tile end)
+				end
 			end
 		end
 	end)
@@ -1878,11 +1894,6 @@ TitleLabel.TextColor3 = Color3.fromRGB(255, 65, 80)
 TitleLabel.Font = Enum.Font.GothamBold
 TitleLabel.TextSize = 15
 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-TitleLabel.TextYAlignment = Enum.TextYAlignment.Center
-TitleLabel.TextWrapped = false
-TitleLabel.TextTruncate = Enum.TextTruncate.AtEnd
-TitleLabel.Active = false
-TitleLabel.Selectable = false
 TitleLabel.Parent = TitleBar
 
 local MinBtn = Instance.new("TextButton")
@@ -1924,7 +1935,7 @@ SearchBox.Parent = MainFrame
 Instance.new("UICorner", SearchBox).CornerRadius = UDim.new(0, 6)
 
 local Scroll = Instance.new("ScrollingFrame")
-Scroll.Size = UDim2.new(1, -20, 1, -150)
+Scroll.Size = UDim2.new(1, -20, 1, -145)
 Scroll.Position = UDim2.new(0, 10, 0, 88)
 Scroll.BackgroundColor3 = Color3.fromRGB(18, 7, 10)
 Scroll.BorderSizePixel = 0
@@ -1938,12 +1949,9 @@ UIList.SortOrder = Enum.SortOrder.LayoutOrder
 UIList.Parent = Scroll
 
 local BottomBar = Instance.new("Frame")
-BottomBar.Size = UDim2.new(1, -20, 0, 48)
-BottomBar.Position = UDim2.new(0, 10, 1, -54)
-BottomBar.BackgroundColor3 = Color3.fromRGB(15, 6, 9)
-BottomBar.BackgroundTransparency = 0
-BottomBar.BorderSizePixel = 0
-BottomBar.ZIndex = 5
+BottomBar.Size = UDim2.new(1, -20, 0, 44)
+BottomBar.Position = UDim2.new(0, 10, 1, -50)
+BottomBar.BackgroundTransparency = 1
 BottomBar.Parent = MainFrame
 
 local RestoreBtn = Instance.new("TextButton")
@@ -3243,7 +3251,7 @@ end)
 
 
 local function UpdateCanvas()
-	Scroll.CanvasSize = UDim2.new(0, 0, 0, UIList.AbsoluteContentSize.Y + 28)
+	Scroll.CanvasSize = UDim2.new(0, 0, 0, UIList.AbsoluteContentSize.Y + 15)
 end
 Connect(UIList:GetPropertyChangedSignal("AbsoluteContentSize"), UpdateCanvas)
 task.defer(UpdateCanvas)
@@ -3281,30 +3289,24 @@ end)
 -- hideFloat=false → chỉ ẩn menu, giữ Lego (dùng cho nút - / click Lego)
 SetMenuVisible = function(v, hideFloat)
 	isOpen = (v == true)
-	pcall(function()
-		if ScreenGui then
-			ScreenGui.Enabled = true
-			if ParentTarget and ScreenGui.Parent ~= ParentTarget then
-				ScreenGui.Parent = ParentTarget
-			end
-		end
-	end)
+	if ScreenGui then ScreenGui.Enabled = true end
 	if MainFrame then MainFrame.Visible = isOpen end
-	pcall(function()
-		if ToggleGui then
-			ToggleGui.Enabled = true
-			if ParentTarget and ToggleGui.Parent ~= ParentTarget then
-				ToggleGui.Parent = ParentTarget
-			end
-		end
-	end)
-	if ToggleButton then
+	if ToggleGui then
+		pcall(function() ToggleGui.Parent = ParentTarget end)
 		if hideFloat and not isOpen then
-			ToggleButton.Visible = false
-			ToggleButton.Active = false
+			-- Hotkey ẩn: giấu luôn nút Lego, nhưng KHÔNG destroy / KHÔNG Shutdown
+			ToggleGui.Enabled = true
+			if ToggleButton then
+				ToggleButton.Visible = false
+				ToggleButton.Active = false
+			end
 		else
-			ToggleButton.Visible = true
-			ToggleButton.Active = true
+			-- Hiện lại hoặc minimize thường: Lego luôn sẵn
+			ToggleGui.Enabled = true
+			if ToggleButton then
+				ToggleButton.Visible = true
+				ToggleButton.Active = true
+			end
 		end
 	end
 end
@@ -3409,16 +3411,15 @@ Connect(workspace.DescendantAdded, function(v)
 			if Backup.OriginalShadows[v] == nil then Backup.OriginalShadows[v] = v.CastShadow end
 			v.CastShadow = false
 		end
-		if Config.FlatPlastic and v:IsA("BasePart") and not isLucky(v) and v.MaterialVariant == "" then
-			local skip = false
-			pcall(function()
-				local model = v:FindFirstAncestorOfClass("Model")
-				if model and Players:GetPlayerFromCharacter(model) then skip = true end
-				if v:FindFirstAncestorOfClass("Tool") or v:FindFirstAncestorOfClass("Accessory") then skip = true end
-			end)
-			if not skip then
+		if Config.FlatPlastic and v:IsA("BasePart") and not isLucky(v) and not isInCharacter(v) then
+			local mv = ""
+			pcall(function() mv = v.MaterialVariant end)
+			if mv == nil or mv == "" then
 				if Backup.OriginalMaterials[v] == nil then Backup.OriginalMaterials[v] = v.Material end
-				v.Material = Enum.Material.SmoothPlastic
+				if Backup.OriginalMaterialVariants[v] == nil then Backup.OriginalMaterialVariants[v] = mv end
+				pcall(function()
+					v.Material = Enum.Material.SmoothPlastic
+				end)
 			end
 		end
 		if Config.FlatHair then ApplyFlatHairObject(v) end
@@ -3441,42 +3442,23 @@ SafeApplySaved("LiteTerrain", function() SetLiteTerrain(Config.LiteTerrain) end)
 SafeApplySaved("FlatHair", function() SetFlatHair(true) end)
 SafeApplySaved("StripClothing", function() SetStripClothing(Config.StripClothing) end)
 SafeApplySaved("SkyMode", function() ApplySkyMode(Config.SkyMode) end)
--- Đồng bộ trạng thái nút UI với Config đã load (tránh lệch ON/OFF sau TP)
-pcall(function()
-	if syncPlast then syncPlast(Config.FlatPlastic == true) end
-	if syncTex then syncTex(Config.RemoveTextures == true) end
-	if syncShad then syncShad(Config.RemoveShadows == true) end
-	if syncFx then syncFx(Config.FxScale or 100) end
-	if syncDist then syncDist(Config.RenderDistance, false) end
-	if syncEng then syncEng(Config.EngineQuality, false) end
-	if syncFarView then syncFarView(Config.KeepFarView == true) end
-	if syncTerr then syncTerr(Config.LiteTerrain == true) end
-	if syncHair then syncHair(Config.FlatHair == true) end
-	if syncStripClothing then syncStripClothing(Config.StripClothing == true) end
-	if syncAutoSave then syncAutoSave(Config.AutoSave == true) end
-	if syncTeleportPersist then syncTeleportPersist(Config.TeleportPersist == true) end
-	if syncStartHidden then syncStartHidden(Config.StartHidden == true) end
-	if syncFloatSeeThrough then syncFloatSeeThrough(Config.FloatSeeThrough ~= false) end
-end)
 StoreConfigInMemory()
 QueueAutoSave()
 
--- Sau TP / khởi động: tôn trọng StartHidden (tránh flash menu + nút nổi).
+-- Sau TP / khởi động: tôn trọng StartHidden.
+-- Nếu có hotkey: ẩn CẢ menu + nút nổi (tránh hiện "lego" sau khi teleport).
+-- Nếu không hotkey: ẩn menu, giữ nút nổi để còn cách mở.
 local function ApplyStartVisibility()
 	local hasHotkey = Config.ToggleKey ~= nil
 	if IsReloadRun or Config.StartHidden then
-		local hideFloat = hasHotkey or Config.StartHidden
-		pcall(function() SetMenuVisible(false, hideFloat == true) end)
+		-- hideFloat = true khi đã có hotkey (hoặc sau mọi lần teleport nếu StartHidden)
+		local hideFloat = hasHotkey or (IsReloadRun and Config.StartHidden)
+		pcall(function() SetMenuVisible(false, hideFloat) end)
 	else
 		pcall(function() SetMenuVisible(true, false) end)
 	end
 end
--- Chạy ngay + defer thêm 1 frame (tránh UI khác / teleport stub ghi đè)
 ApplyStartVisibility()
-task.defer(ApplyStartVisibility)
-task.delay(0.35, function()
-	if IsRunning then ApplyStartVisibility() end
-end)
 
 local RuntimeHandle = { Stop = Shutdown }
 pcall(function() PersistentEnv.VampireOptimizerRuntime = RuntimeHandle end)
