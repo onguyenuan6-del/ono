@@ -1,10 +1,13 @@
 -- ====================================================================
---   VAMPIRE OPTIMIZER V7.8.7 - CLOUDS WARNING FIX
+--   VAMPIRE OPTIMIZER V7.9.0 - RESPONSIVE UI / RESOLUTION PROFILES
 --   Paste this ONE file into the executor. Nothing else is needed (no URL, no outside app, no manual file):
 --     * it saves its own copy to workspace/VampireOptimizer/main.lua
 --     * when ANY teleport starts (lobby -> match, rejoin, server hop) it queues a small stub, like Cat Vape,
 --       which loads that copy again in the next server.
 --   Pressing X in the menu stops it for good (until you execute it again).
+--   V7.9.0: Responsive UI for 7680x4320 through 256x144; wrap long descriptions, fit menu to viewport, detect listed display profiles.
+--   V7.8.9: Add viewport resolution detection and adaptive low graphics quality (144p is a reference floor; no true render downscale API).
+--   V7.8.8: Re-apply Fog when the game overwrites Lighting after teleport; retry Flat Plastic during map loading.
 --   V7.8.7: Sửa cảnh báo "Cloud instance must exist under Terrain node" (không còn chuyển Clouds ra khỏi Terrain, chỉ tắt Enabled);
 --           bớt log rác: DebugRay và tay/chân viewmodel không còn bị in / nhận nhầm là khối cầm tay; đồng bộ số phiên bản trên UI.
 --   V7.8.6: "Ẩn texture" không còn làm mất dấu "?" / màu của Lucky Block (sảnh + trong trận), giống "Flat materials".
@@ -19,7 +22,7 @@
 
 local VAMPIRE_SOURCE = [==[
 -- ====================================================================
---   VAMPIRE OPTIMIZER V7.8.7
+--   VAMPIRE OPTIMIZER V7.9.0
 --   V7.8.2: Hotkey hides menu+Lego; custom vampire icon; ToggleKey JSON fix.
 --   V7.8.1: Fixed Top Border rounded corner bug, changed floating icon to a Lego Brick.
 -- ====================================================================
@@ -100,13 +103,14 @@ end
 
 local Lang = {
 	vi = {
-		Title="VAMPIRE OPTIMIZER V7.8.7", Search="Tìm kiếm tính năng...", Restore="Khôi phục đồ họa gốc", Save="Lưu cấu hình",
+		Title="VAMPIRE OPTIMIZER V7.9.0", Search="Tìm kiếm tính năng...", Restore="Khôi phục đồ họa gốc", Save="Lưu cấu hình",
 		FlatPlastic="Làm phẳng vật liệu (Nhựa)", FlatPlasticDesc="Đổi bề mặt sang nhựa; bỏ qua khối Lucky",
 		RemoveTextures="Ẩn Texture và Decal", RemoveTexturesDesc="Ẩn texture và decal trên bề mặt",
 		RemoveShadows="Tắt bóng đổ", RemoveShadowsDesc="Tắt bóng của vật thể để giảm tải đồ họa",
 		FxScaleTitle="Giảm hiệu ứng (0% - 100%)", FxScaleDesc="0% = tắt; 50% = giảm một nửa; 100% = mặc định",
 		RenderDistTitle="Khoảng sương mù", RenderDistDesc="Chỉ chỉnh Fog; không vượt giới hạn render hoặc Streaming của Roblox",
 		EngineQualityTitle="Chất lượng đồ họa (Level 1 - 21)", EngineQualityDesc="Level 1 nhẹ nhất; tầm nhìn vẫn tối đa nếu bật Giữ tầm nhìn",
+		ResolutionTitle="Tự nhận diện độ phân giải / tối ưu đồ họa", ResolutionDesc="Nhận diện độ phân giải và tự co giãn giao diện từ 256×144 đến 7680×4320. Chỉ giảm Graphics Level, không ép độ phân giải render thật.", ResolutionStatus="Viewport: %dx%d | Màn hình: %s",
 		LiteTerrain="Tối ưu địa hình", LiteTerrainDesc="Giảm sóng nước, phản xạ và cỏ trang trí",
 		SkyTitle="Tùy chọn bầu trời", SkyDesc="Chuyển giữa bầu trời Galaxy và bầu trời gốc",
 		SkyGalaxy="Bầu trời Galaxy", SkyDefault="Bầu trời gốc của game",
@@ -127,13 +131,14 @@ local Lang = {
         FloatDragHint="Kéo nút nổi để đổi vị trí (tự lưu, không vượt màn hình)",
 	},
 	en = {
-		Title="VAMPIRE OPTIMIZER V7.8.7", Search="Search features...", Restore="Restore original graphics", Save="Save settings",
+		Title="VAMPIRE OPTIMIZER V7.9.0", Search="Search features...", Restore="Restore original graphics", Save="Save settings",
 		FlatPlastic="Flat materials (Plastic)", FlatPlasticDesc="Convert surfaces to plastic; skips Lucky blocks",
 		RemoveTextures="Hide textures and decals", RemoveTexturesDesc="Hide surface textures and decals",
 		RemoveShadows="Disable shadows", RemoveShadowsDesc="Disable object shadows to reduce graphics load",
 		FxScaleTitle="Effect reduction (0% - 100%)", FxScaleDesc="0% = off; 50% = half; 100% = default",
 		RenderDistTitle="Fog distance", RenderDistDesc="Changes fog only; cannot bypass Roblox render or Streaming limits",
 		EngineQualityTitle="Graphics quality (Level 1 - 21)", EngineQualityDesc="Level 1 is lightest; view stays max if Keep view distance is on",
+		ResolutionTitle="Auto-detect resolution / optimize graphics", ResolutionDesc="Detects the viewport and scales the UI from 256×144 up to 7680×4320. Lowers Graphics Level only; it does not force render resolution.", ResolutionStatus="Viewport: %dx%d | Display: %s",
 		LiteTerrain="Lite terrain", LiteTerrainDesc="Reduces water waves, reflections, and decorative grass",
 		SkyTitle="Sky options", SkyDesc="Switch between Galaxy sky and the game's original sky",
 		SkyGalaxy="Galaxy sky", SkyDefault="Game default sky",
@@ -273,6 +278,7 @@ local Config = {
 	FxScale = 100,
 	RenderDistance = 100000,
 	EngineQuality = 1,
+	AutoResolutionQuality = true,
 	LiteTerrain = false,
 	SkyMode = "Default",
 	LiveMonitor = true,
@@ -367,6 +373,7 @@ if tostring(Config.EngineQuality):upper() == "AUTO" then
 else
 	Config.EngineQuality = math.clamp(math.floor(tonumber(Config.EngineQuality) or 1), 1, 21)
 end
+Config.AutoResolutionQuality = Config.AutoResolutionQuality ~= false
 Config.FlatPlastic = Config.FlatPlastic == true
 Config.RemoveTextures = Config.RemoveTextures == true
 Config.RemoveShadows = Config.RemoveShadows == true
@@ -536,39 +543,64 @@ do
 	end
 end
 
+-- Flat Plastic is applied in cancellable passes. Map parts can be created before their
+-- MaterialVariant / final properties are assigned, especially while joining a new server.
+local FlatPlasticRevision = 0
+
+local function ApplyFlatMaterialVariant(v)
+	if not v or not v:IsA("MaterialVariant") or isLucky(v) then return end
+	if Backup.OriginalTile[v] == nil then Backup.OriginalTile[v] = v.StudsPerTile end
+	pcall(function() v.StudsPerTile = 100000 end)
+end
+
+local function ApplyFlatPlasticPart(v)
+	if not Config.FlatPlastic or not v or not v:IsA("BasePart") or not v.Parent then return end
+	if isLucky(v) or isInCharacter(v) or Held.IsHeld(v) then return end
+	local mv = ""
+	pcall(function() mv = v.MaterialVariant end)
+	-- Preserve custom variants; their tiling is handled by ApplyFlatMaterialVariant.
+	if mv == nil or mv == "" then
+		if Backup.OriginalMaterials[v] == nil then Backup.OriginalMaterials[v] = v.Material end
+		if Backup.OriginalMaterialVariants[v] == nil then Backup.OriginalMaterialVariants[v] = mv end
+		pcall(function() v.Material = Enum.Material.SmoothPlastic end)
+	end
+end
+
+local function ApplyFlatPlasticPass(revision)
+	if not IsRunning or revision ~= FlatPlasticRevision or not Config.FlatPlastic then return end
+	local count = 0
+	for _, v in ipairs(MaterialService:GetDescendants()) do
+		if not IsRunning or revision ~= FlatPlasticRevision or not Config.FlatPlastic then return end
+		if v:IsA("MaterialVariant") then ApplyFlatMaterialVariant(v) end
+		count += 1
+		if count % 1000 == 0 then task.wait() end
+	end
+	count = 0
+	for _, v in ipairs(workspace:GetDescendants()) do
+		if not IsRunning or revision ~= FlatPlasticRevision or not Config.FlatPlastic then return end
+		if v:IsA("BasePart") then ApplyFlatPlasticPart(v) end
+		count += 1
+		if count % 1000 == 0 then task.wait() end
+	end
+end
+
 local function SetFlatPlastic(enable)
-	Config.FlatPlastic = enable
+	Config.FlatPlastic = enable == true
+	FlatPlasticRevision += 1
+	local revision = FlatPlasticRevision
 	task.spawn(function()
-		if enable then
-			-- Make custom MaterialVariants flatter (large tile) without removing them
-			for _, v in ipairs(MaterialService:GetDescendants()) do
-				if v:IsA("MaterialVariant") and not isLucky(v) then
-					if Backup.OriginalTile[v] == nil then Backup.OriginalTile[v] = v.StudsPerTile end
-					pcall(function() v.StudsPerTile = 100000 end)
-				end
-			end
-			-- Only force SmoothPlastic on parts that do NOT have a custom MaterialVariant
-			-- (clearing MaterialVariant turns many textured parts into plain white plastic)
-			for _, v in ipairs(workspace:GetDescendants()) do
-				if v:IsA("BasePart") and not isLucky(v) and not isInCharacter(v) and not Held.IsHeld(v) then
-					local mv = ""
-					pcall(function() mv = v.MaterialVariant end)
-					if mv == nil or mv == "" then
-						if Backup.OriginalMaterials[v] == nil then
-							Backup.OriginalMaterials[v] = v.Material
-						end
-						if Backup.OriginalMaterialVariants[v] == nil then
-							Backup.OriginalMaterialVariants[v] = mv
-						end
-						pcall(function()
-							v.Material = Enum.Material.SmoothPlastic
-						end)
-					end
-				end
+		if Config.FlatPlastic then
+			-- Re-scan while a destination server is finishing its map load.
+			for pass, delaySeconds in ipairs({ 0, 0.6, 1.5 }) do
+				if delaySeconds > 0 then task.wait(delaySeconds) end
+				if not IsRunning or revision ~= FlatPlasticRevision or not Config.FlatPlastic then return end
+				ApplyFlatPlasticPass(revision)
 			end
 		else
-			-- Restore Material and MaterialVariant
+			-- Restore only while this disable request is still the latest toggle.
+			local count = 0
 			for part, mat in pairs(Backup.OriginalMaterials) do
+				if not IsRunning or revision ~= FlatPlasticRevision or Config.FlatPlastic then return end
 				if part and part.Parent then
 					pcall(function()
 						part.Material = mat
@@ -576,14 +608,18 @@ local function SetFlatPlastic(enable)
 						if mv ~= nil then part.MaterialVariant = mv end
 					end)
 				end
+				count += 1
+				if count % 1000 == 0 then task.wait() end
 			end
+			count = 0
 			for variant, tile in pairs(Backup.OriginalTile) do
-				if variant and variant.Parent then
-					pcall(function() variant.StudsPerTile = tile end)
-				end
+				if not IsRunning or revision ~= FlatPlasticRevision or Config.FlatPlastic then return end
+				if variant and variant.Parent then pcall(function() variant.StudsPerTile = tile end) end
+				count += 1
+				if count % 1000 == 0 then task.wait() end
 			end
 		end
-		if Held.Refresh then Held.Refresh() end
+		if revision == FlatPlasticRevision and Held.Refresh then Held.Refresh() end
 	end)
 	QueueAutoSave()
 end
@@ -660,8 +696,40 @@ local function ApplyFxScale(pct)
 	QueueAutoSave()
 end
 
+local FogApplyRevision = 0
+local FogOverrideEnabled = true
+local function ScheduleFogReapply()
+	if not IsRunning or not FogOverrideEnabled then return end
+	FogApplyRevision += 1
+	local revision = FogApplyRevision
+	task.delay(0.25, function()
+		if not IsRunning or not FogOverrideEnabled or revision ~= FogApplyRevision then return end
+		local dist = math.clamp(math.floor(tonumber(Config.RenderDistance) or 100000), 200, 100000)
+		local targetEnd = dist + math.max(1000, math.floor(dist * 0.1))
+		local needsApply = false
+		local ok = pcall(function()
+			needsApply = math.abs(Lighting.FogStart - dist) > 0.01
+				or math.abs(Lighting.FogEnd - targetEnd) > 0.01
+				or Lighting.FogColor ~= Backup.Lighting.FogColor
+		end)
+		if ok and needsApply then
+			pcall(function()
+				Lighting.FogStart = dist
+				Lighting.FogEnd = targetEnd
+				Lighting.FogColor = Backup.Lighting.FogColor
+			end)
+		end
+	end)
+end
+
+-- The experience may write its own fog values after the queued script starts in a new server.
+Connect(Lighting:GetPropertyChangedSignal("FogStart"), ScheduleFogReapply)
+Connect(Lighting:GetPropertyChangedSignal("FogEnd"), ScheduleFogReapply)
+Connect(Lighting:GetPropertyChangedSignal("FogColor"), ScheduleFogReapply)
+
 local function SetRenderDistance(dist)
 	dist = math.clamp(math.floor(tonumber(dist) or 100000), 200, 100000)
+	FogOverrideEnabled = true
 	Config.RenderDistance = dist
 	Lighting.FogStart = dist
 	Lighting.FogEnd = dist + math.max(1000, math.floor(dist * 0.1))
@@ -729,9 +797,9 @@ function FrmFlag.Restore()
 	pcall(function() PersistentEnv.VampireOptimizerFrmOriginal = nil end)
 end
 
-local function SetEngineQualityLevel(lvl)
+local function SetEngineQualityLevel(lvl, preserveConfigured)
 	if tostring(lvl):upper() == "AUTO" then
-		Config.EngineQuality = "AUTO"
+		if preserveConfigured ~= false then Config.EngineQuality = "AUTO" end
 		FrmFlag.Restore()
 		pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic end)
 		Lighting.EnvironmentDiffuseScale = Backup.Lighting.EnvironmentDiffuseScale
@@ -740,7 +808,7 @@ local function SetEngineQualityLevel(lvl)
 		return
 	end
 	lvl = math.clamp(math.floor(tonumber(lvl) or 1), 1, 21)
-	Config.EngineQuality = lvl
+	if preserveConfigured ~= false then Config.EngineQuality = lvl end
 	local farView = false
 	if Config.KeepFarView ~= false and lvl < 21 then
 		local applied, why = FrmFlag.Set(lvl)
@@ -764,6 +832,79 @@ local function SetEngineQualityLevel(lvl)
 		Lighting.EnvironmentSpecularScale = Backup.Lighting.EnvironmentSpecularScale
 	end
 	QueueAutoSave()
+end
+
+-- Resolution detection is based on the active 3D camera viewport, not the desktop's native panel resolution.
+-- Roblox game scripts do not expose a supported API to force the client render target to 256x144 (144p).
+local ResolutionLastApplied = nil
+local function GetViewportResolution()
+	local camera = workspace.CurrentCamera
+	if not camera then return nil end
+	local ok, size = pcall(function() return camera.ViewportSize end)
+	if not ok or not size or size.X < 1 or size.Y < 1 then return nil end
+	return math.floor(size.X + 0.5), math.floor(size.Y + 0.5)
+end
+
+-- Exact display profiles requested by the user. The duplicate 4096x2160 entry is intentionally stored once.
+local ResolutionProfiles = {
+	["7680x4320"] = "8K UHD",
+	["5120x2880"] = "5K UHD",
+	["4096x2160"] = "DCI 4K",
+	["2560x1080"] = "Ultrawide 1080p",
+	["3440x1440"] = "Ultrawide 1440p",
+	["5120x1440"] = "Super Ultrawide 1440p",
+	["7680x2160"] = "Super Ultrawide 2160p",
+	["2560x1600"] = "WQXGA",
+	["2560x1440"] = "QHD 1440p",
+	["2048x1080"] = "2K DCI",
+	["1920x1200"] = "WUXGA",
+	["1920x1080"] = "Full HD 1080p",
+	["1366x768"] = "HD+",
+	["1280x720"] = "HD 720p",
+	["854x480"] = "480p",
+	["640x360"] = "360p",
+	["320x240"] = "240p",
+	["256x144"] = "144p",
+}
+
+local function GetResolutionTier(width, height)
+	local exact = ResolutionProfiles[tostring(math.floor(width or 0)) .. "x" .. tostring(math.floor(height or 0))]
+	if exact then return exact end
+	local aspect = (height and height > 0) and ((width or 0) / height) or 1
+	local suffix = aspect >= 2.1 and " Ultrawide" or ""
+	if height >= 2160 then return "2160p+" .. suffix end
+	if height >= 1440 then return "1440p" .. suffix end
+	if height >= 1080 then return "1080p" .. suffix end
+	if height >= 900 then return "900p" .. suffix end
+	if height >= 720 then return "720p" .. suffix end
+	if height >= 480 then return "480p" .. suffix end
+	if height >= 360 then return "360p" .. suffix end
+	if height >= 240 then return "240p" .. suffix end
+	return "144p" .. suffix
+end
+
+local function GetAdaptiveQuality(height)
+	local requested = 1
+	if height >= 2160 then requested = 4
+	elseif height >= 1440 then requested = 3
+	elseif height >= 1080 then requested = 3
+	elseif height >= 720 then requested = 2
+	else requested = 1 end
+	local saved = tonumber(Config.EngineQuality)
+	if not saved then saved = 1 end
+	-- Auto mode can only lower (or keep) the user's selected graphics level, never raise it.
+	return math.clamp(math.min(saved, requested), 1, 21)
+end
+
+local function ApplyResolutionAutoQuality(force)
+	if not IsRunning or not Config.AutoResolutionQuality then return end
+	local width, height = GetViewportResolution()
+	if not width then return end
+	local quality = GetAdaptiveQuality(height)
+	-- Apply only when the selected quality tier changes; window resizing won't spam settings writes.
+	if not force and ResolutionLastApplied == quality then return end
+	ResolutionLastApplied = quality
+	SetEngineQualityLevel(quality, false)
 end
 
 local function SetLiteTerrain(enable)
@@ -1922,13 +2063,17 @@ do
 end
 
 local function RestoreAllGraphics()
+	-- Restore mode must not be overridden by the Fog persistence watcher.
+	FogOverrideEnabled = false
+	FogApplyRevision += 1
 	SetFlatPlastic(false)
 	SetRemoveTextures(false)
 	SetRemoveShadows(false)
 	SetFlatHair(false)
 	SetStripClothing(false)
 	ApplyFxScale(100)
-	SetRenderDistance(100000)
+	Config.RenderDistance = math.clamp(math.floor(Backup.Lighting.FogStart), 200, 100000)
+	QueueAutoSave()
 	SetLiteTerrain(false)
 	ApplySkyMode("Default")
 	FrmFlag.Restore()
@@ -1942,7 +2087,7 @@ local function RestoreAllGraphics()
 	local originalQualityLevel = nil
 	pcall(function() originalQualityLevel = tonumber(Backup.InitialEngineQuality.Name:match("^Level(%d+)$")) end)
 	Config.EngineQuality = originalQualityLevel or "AUTO"
-	Config.RenderDistance = math.clamp(math.floor(Backup.Lighting.FogEnd), 200, 100000)
+	Config.RenderDistance = math.clamp(math.floor(Backup.Lighting.FogStart), 200, 100000)
 end
 
 -- ==================== GIAO DIỆN NGƯỜI DÙNG ====================
@@ -1951,7 +2096,7 @@ pcall(function() if type(gethui) == "function" then ParentTarget = gethui() end 
 if not ParentTarget then pcall(function() ParentTarget = game:GetService("CoreGui") end) end
 if not ParentTarget then ParentTarget = LocalPlayer:WaitForChild("PlayerGui") end
 
-for _, oldName in ipairs({ "VampireOptimizer_GUI_V6_8", "VampireOptimizer_GUI_V7_2", "VampireOptimizer_GUI_V7_7", "VampireOptimizer_GUI_V7_8", "VampireOptimizer_Float_V7_2", "VampireOptimizer_Float_V7_7", "VampireOptimizer_Float_V7_8" }) do
+for _, oldName in ipairs({ "VampireOptimizer_GUI_V6_8", "VampireOptimizer_GUI_V7_2", "VampireOptimizer_GUI_V7_7", "VampireOptimizer_GUI_V7_8", "VampireOptimizer_GUI_V7_8_9", "VampireOptimizer_Float_V7_2", "VampireOptimizer_Float_V7_7", "VampireOptimizer_Float_V7_8", "VampireOptimizer_Float_V7_8_9" }) do
 	pcall(function()
 		local old = ParentTarget:FindFirstChild(oldName)
 		if old then old:Destroy() end
@@ -1959,7 +2104,7 @@ for _, oldName in ipairs({ "VampireOptimizer_GUI_V6_8", "VampireOptimizer_GUI_V7
 end
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "VampireOptimizer_GUI_V7_8_1"
+ScreenGui.Name = "VampireOptimizer_GUI_V7_9_0"
 ScreenGui.DisplayOrder = 2147483000
 ScreenGui.IgnoreGuiInset = true
 ScreenGui.ResetOnSpawn = false
@@ -1968,7 +2113,7 @@ ScreenGui.Enabled = true
 ScreenGui.Parent = ParentTarget
 
 local ToggleGui = Instance.new("ScreenGui")
-ToggleGui.Name = "VampireOptimizer_Float_V7_8_1"
+ToggleGui.Name = "VampireOptimizer_Float_V7_9_0"
 ToggleGui.DisplayOrder = 2147483001
 ToggleGui.IgnoreGuiInset = true
 ToggleGui.ResetOnSpawn = false
@@ -2256,8 +2401,9 @@ end)
 -- KHUNG MENU CHÍNH (Đã sửa lỗi cắt viền)
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainWindow"
-MainFrame.Size = UDim2.new(0, 480, 0, 600) 
-MainFrame.Position = UDim2.new(0.5, -240, 0.5, -300)
+MainFrame.Size = UDim2.new(0, 480, 0, 600)
+MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+MainFrame.Position = UDim2.fromScale(0.5, 0.5)
 MainFrame.BackgroundColor3 = Color3.fromRGB(15, 6, 9)
 MainFrame.BorderSizePixel = 0
 MainFrame.ClipsDescendants = false -- Tắt tính năng này để không cắt viền UIStroke
@@ -2265,6 +2411,35 @@ MainFrame.Active = true
 MainFrame.Draggable = true
 MainFrame.Visible = false -- tránh flash menu sau TP; ApplyStartVisibility quyết định sau
 MainFrame.Parent = ScreenGui
+
+-- Scale the complete panel to fit the live Roblox viewport (including ultrawide / 4K / 5K / 8K / small displays).
+-- The panel remains centered; on tiny 256x144 viewports it must shrink substantially to remain on-screen.
+local MainFrameUIScale = Instance.new("UIScale")
+MainFrameUIScale.Scale = 1
+MainFrameUIScale.Parent = MainFrame
+
+local function UpdateMainFrameResponsiveScale()
+	local viewportWidth, viewportHeight = GetViewportResolution()
+	if not viewportWidth or not viewportHeight then return end
+	local availableWidth = math.max(1, viewportWidth - 24)
+	local availableHeight = math.max(1, viewportHeight - 24)
+	-- Scale type by pixel area: standard 1600x900 keeps the base layout; high-DPI displays get larger text/UI.
+	local pixelAreaRatio = (viewportWidth * viewportHeight) / (1600 * 900)
+	local preferredScale = math.clamp(math.sqrt(pixelAreaRatio), 0.55, 1.6)
+	local fitScale = math.min(availableWidth / 480, availableHeight / 600)
+	MainFrameUIScale.Scale = math.clamp(math.min(preferredScale, fitScale), 0.12, 1.6)
+end
+
+local function BindMainFrameResponsiveCamera()
+	local camera = workspace.CurrentCamera
+	if camera then
+		Connect(camera:GetPropertyChangedSignal("ViewportSize"), UpdateMainFrameResponsiveScale)
+	end
+	UpdateMainFrameResponsiveScale()
+end
+
+Connect(workspace:GetPropertyChangedSignal("CurrentCamera"), BindMainFrameResponsiveCamera)
+BindMainFrameResponsiveCamera()
 
 local MainCorner = Instance.new("UICorner")
 MainCorner.CornerRadius = UDim.new(0, 10)
@@ -2384,13 +2559,13 @@ local allCards = {}
 local function CreateToggleCard(id, titleKey, descKey, defaultState, callback)
 	local Card = Instance.new("Frame")
 	Card.Name = id
-	Card.Size = UDim2.new(1, -8, 0, 52)
+	Card.Size = UDim2.new(1, -8, 0, 66)
 	Card.BackgroundColor3 = Color3.fromRGB(26, 10, 14)
 	Card.Parent = Scroll
 	Instance.new("UICorner", Card).CornerRadius = UDim.new(0, 6)
 
 	local Label = Instance.new("TextLabel")
-	Label.Size = UDim2.new(1, -70, 0, 20)
+	Label.Size = UDim2.new(1, -82, 0, 20)
 	Label.Position = UDim2.new(0, 10, 0, 6)
 	Label.BackgroundTransparency = 1
 	Label.Text = T(titleKey)
@@ -2398,17 +2573,20 @@ local function CreateToggleCard(id, titleKey, descKey, defaultState, callback)
 	Label.Font = Enum.Font.GothamSemibold
 	Label.TextSize = 13
 	Label.TextXAlignment = Enum.TextXAlignment.Left
+	Label.TextTruncate = Enum.TextTruncate.AtEnd
 	Label.Parent = Card
 
 	local Sub = Instance.new("TextLabel")
-	Sub.Size = UDim2.new(1, -70, 0, 18)
-	Sub.Position = UDim2.new(0, 10, 0, 26)
+	Sub.Size = UDim2.new(1, -82, 0, 34)
+	Sub.Position = UDim2.new(0, 10, 0, 27)
 	Sub.BackgroundTransparency = 1
 	Sub.Text = T(descKey)
 	Sub.TextColor3 = Color3.fromRGB(160, 100, 110)
 	Sub.Font = Enum.Font.Gotham
 	Sub.TextSize = 11
+	Sub.TextWrapped = true
 	Sub.TextXAlignment = Enum.TextXAlignment.Left
+	Sub.TextYAlignment = Enum.TextYAlignment.Top
 	Sub.Parent = Card
 
 	local Toggle = Instance.new("TextButton")
@@ -2995,6 +3173,113 @@ local function CreateEngineQualityCard()
 	end
 end
 
+local function CreateResolutionCard()
+	local Card = Instance.new("Frame")
+	Card.Name = "ResolutionAutoDetect"
+	Card.Size = UDim2.new(1, -8, 0, 78)
+	Card.BackgroundColor3 = Color3.fromRGB(26, 10, 14)
+	Card.Parent = Scroll
+	Instance.new("UICorner", Card).CornerRadius = UDim.new(0, 6)
+
+	local Label = Instance.new("TextLabel")
+	Label.Size = UDim2.new(1, -70, 0, 20)
+	Label.Position = UDim2.new(0, 10, 0, 6)
+	Label.BackgroundTransparency = 1
+	Label.Text = T("ResolutionTitle")
+	Label.TextColor3 = Color3.fromRGB(255, 215, 220)
+	Label.Font = Enum.Font.GothamSemibold
+	Label.TextSize = 13
+	Label.TextXAlignment = Enum.TextXAlignment.Left
+	Label.Parent = Card
+
+	local Sub = Instance.new("TextLabel")
+	Sub.Size = UDim2.new(1, -70, 0, 28)
+	Sub.Position = UDim2.new(0, 10, 0, 26)
+	Sub.BackgroundTransparency = 1
+	Sub.Text = T("ResolutionDesc")
+	Sub.TextColor3 = Color3.fromRGB(160, 100, 110)
+	Sub.Font = Enum.Font.Gotham
+	Sub.TextSize = 9
+	Sub.TextWrapped = true
+	Sub.TextXAlignment = Enum.TextXAlignment.Left
+	Sub.TextYAlignment = Enum.TextYAlignment.Top
+	Sub.Parent = Card
+
+	local Status = Instance.new("TextLabel")
+	Status.Size = UDim2.new(1, -20, 0, 15)
+	Status.Position = UDim2.new(0, 10, 1, -18)
+	Status.BackgroundTransparency = 1
+	Status.Text = "Viewport: detecting..."
+	Status.TextColor3 = Color3.fromRGB(220, 190, 195)
+	Status.Font = Enum.Font.GothamSemibold
+	Status.TextSize = 10
+	Status.TextXAlignment = Enum.TextXAlignment.Left
+	Status.Parent = Card
+
+	local Toggle = Instance.new("TextButton")
+	Toggle.Size = UDim2.new(0, 48, 0, 26)
+	Toggle.Position = UDim2.new(1, -58, 0.5, -13)
+	Toggle.BackgroundColor3 = Config.AutoResolutionQuality and Color3.fromRGB(200, 25, 45) or Color3.fromRGB(50, 20, 25)
+	Toggle.Text = Config.AutoResolutionQuality and T("On") or T("Off")
+	Toggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+	Toggle.Font = Enum.Font.GothamBold
+	Toggle.TextSize = 11
+	Toggle.Parent = Card
+	Instance.new("UICorner", Toggle).CornerRadius = UDim.new(0, 13)
+
+	local function UpdateStatus()
+		local width, height = GetViewportResolution()
+		if width then
+			Status.Text = string.format(T("ResolutionStatus"), width, height, GetResolutionTier(width, height))
+		else
+			Status.Text = "Viewport: detecting..."
+		end
+	end
+
+	local function UpdateToggle()
+		Toggle.Text = Config.AutoResolutionQuality and T("On") or T("Off")
+		Toggle.BackgroundColor3 = Config.AutoResolutionQuality and Color3.fromRGB(200, 25, 45) or Color3.fromRGB(50, 20, 25)
+	end
+
+	Connect(Toggle.MouseButton1Down, function()
+		Config.AutoResolutionQuality = not Config.AutoResolutionQuality
+		if Config.AutoResolutionQuality then
+			ResolutionLastApplied = nil
+			ApplyResolutionAutoQuality(true)
+		else
+			-- Restore the manually selected level when automatic mode is turned off.
+			SetEngineQualityLevel(Config.EngineQuality, false)
+		end
+		UpdateToggle()
+		QueueAutoSave()
+	end)
+
+	local function BindCamera()
+		local camera = workspace.CurrentCamera
+		if camera then
+			Connect(camera:GetPropertyChangedSignal("ViewportSize"), function()
+				UpdateStatus()
+				ResolutionLastApplied = nil
+				ApplyResolutionAutoQuality()
+			end)
+		end
+		UpdateStatus()
+		ResolutionLastApplied = nil
+		ApplyResolutionAutoQuality()
+	end
+
+	Connect(workspace:GetPropertyChangedSignal("CurrentCamera"), BindCamera)
+	BindCamera()
+	RegisterLangRefresh(function()
+		Label.Text = T("ResolutionTitle")
+		Sub.Text = T("ResolutionDesc")
+		UpdateStatus()
+		UpdateToggle()
+	end)
+	table.insert(allCards, Card)
+	return UpdateStatus
+end
+
 local function CreateSkyCard()
 	local Card = Instance.new("Frame")
 	Card.Name = "SkyControl " .. T("SkyTitle")
@@ -3216,6 +3501,7 @@ local syncShad = CreateToggleCard("RemoveShadows", "RemoveShadows", "RemoveShado
 local syncFx = CreateFxSliderCard()
 local syncDist = CreateRenderDistanceCard()
 local syncEng = CreateEngineQualityCard()
+local syncResolution = CreateResolutionCard()
 local syncFarView = CreateToggleCard("KeepFarView", "FarViewTitle", "FarViewDesc", Config.KeepFarView, function(s)
 	Config.KeepFarView = s == true
 	SetEngineQualityLevel(Config.EngineQuality)
@@ -3815,20 +4101,23 @@ Connect(workspace.DescendantAdded, function(v)
 			if Backup.OriginalShadows[v] == nil then Backup.OriginalShadows[v] = v.CastShadow end
 			v.CastShadow = false
 		end
-		if Config.FlatPlastic and v:IsA("BasePart") and not isLucky(v) and not isInCharacter(v) and not Held.IsHeld(v) then
-			local mv = ""
-			pcall(function() mv = v.MaterialVariant end)
-			if mv == nil or mv == "" then
-				if Backup.OriginalMaterials[v] == nil then Backup.OriginalMaterials[v] = v.Material end
-				if Backup.OriginalMaterialVariants[v] == nil then Backup.OriginalMaterialVariants[v] = mv end
-				pcall(function()
-					v.Material = Enum.Material.SmoothPlastic
-				end)
-			end
+		if Config.FlatPlastic and v:IsA("BasePart") then
+			ApplyFlatPlasticPart(v)
+			-- Some experiences assign MaterialVariant shortly after parenting the part.
+			task.delay(0.25, function()
+				if IsRunning and Config.FlatPlastic and v and v.Parent then ApplyFlatPlasticPart(v) end
+			end)
 		end
 		if Config.FlatHair then ApplyFlatHairObject(v) end
 		if Held.OnAdded then Held.OnAdded(v) end
 		if Config.StripClothing and IsRemovableClothing(v) then StripClothingInstance(v) end
+	end)
+end)
+
+Connect(MaterialService.DescendantAdded, function(v)
+	if not v:IsA("MaterialVariant") then return end
+	task.defer(function()
+		if IsRunning and Config.FlatPlastic and v and v.Parent then ApplyFlatMaterialVariant(v) end
 	end)
 end)
 
@@ -3842,7 +4131,10 @@ SafeApplySaved("RemoveTextures", function() SetRemoveTextures(Config.RemoveTextu
 SafeApplySaved("RemoveShadows", function() SetRemoveShadows(Config.RemoveShadows) end)
 SafeApplySaved("FxScale", function() ApplyFxScale(Config.FxScale) end)
 SafeApplySaved("FogDistance", function() SetRenderDistance(Config.RenderDistance) end)
+task.delay(1.0, ScheduleFogReapply)
+task.delay(3.0, ScheduleFogReapply)
 SafeApplySaved("EngineQuality", function() SetEngineQualityLevel(Config.EngineQuality) end)
+task.defer(function() ApplyResolutionAutoQuality(true) end)
 SafeApplySaved("LiteTerrain", function() SetLiteTerrain(Config.LiteTerrain) end)
 SafeApplySaved("FlatHair", function() SetFlatHair(true) end)
 SafeApplySaved("StripClothing", function() SetStripClothing(Config.StripClothing) end)
