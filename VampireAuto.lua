@@ -1,10 +1,12 @@
 -- ====================================================================
---   VAMPIRE OPTIMIZER V7.8.2 - HOTKEY TOGGLE FIX (LEGO ALWAYS VISIBLE)
+--   VAMPIRE OPTIMIZER V7.8.7 - CLOUDS WARNING FIX
 --   Paste this ONE file into the executor. Nothing else is needed (no URL, no outside app, no manual file):
 --     * it saves its own copy to workspace/VampireOptimizer/main.lua
 --     * when ANY teleport starts (lobby -> match, rejoin, server hop) it queues a small stub, like Cat Vape,
 --       which loads that copy again in the next server.
 --   Pressing X in the menu stops it for good (until you execute it again).
+--   V7.8.7: Sửa cảnh báo "Cloud instance must exist under Terrain node" (không còn chuyển Clouds ra khỏi Terrain, chỉ tắt Enabled);
+--           bớt log rác: DebugRay và tay/chân viewmodel không còn bị in / nhận nhầm là khối cầm tay; đồng bộ số phiên bản trên UI.
 --   V7.8.6: "Ẩn texture" không còn làm mất dấu "?" / màu của Lucky Block (sảnh + trong trận), giống "Flat materials".
 --           Bỏ cảnh báo GetJoints; log "not a block" không bị 3DClothing chiếm hết.
 --   V7.8.5: Sửa khối cầm tay nhìn từ BÊN NGOÀI (góc nhìn thứ ba) bị đen: nhận cả khối nằm sâu dưới tay nhân vật
@@ -17,7 +19,7 @@
 
 local VAMPIRE_SOURCE = [==[
 -- ====================================================================
---   VAMPIRE OPTIMIZER V7.8.2
+--   VAMPIRE OPTIMIZER V7.8.7
 --   V7.8.2: Hotkey hides menu+Lego; custom vampire icon; ToggleKey JSON fix.
 --   V7.8.1: Fixed Top Border rounded corner bug, changed floating icon to a Lego Brick.
 -- ====================================================================
@@ -98,7 +100,7 @@ end
 
 local Lang = {
 	vi = {
-		Title="VAMPIRE OPTIMIZER V7.8.2", Search="Tìm kiếm tính năng...", Restore="Khôi phục đồ họa gốc", Save="Lưu cấu hình",
+		Title="VAMPIRE OPTIMIZER V7.8.7", Search="Tìm kiếm tính năng...", Restore="Khôi phục đồ họa gốc", Save="Lưu cấu hình",
 		FlatPlastic="Làm phẳng vật liệu (Nhựa)", FlatPlasticDesc="Đổi bề mặt sang nhựa; bỏ qua khối Lucky",
 		RemoveTextures="Ẩn Texture và Decal", RemoveTexturesDesc="Ẩn texture và decal trên bề mặt",
 		RemoveShadows="Tắt bóng đổ", RemoveShadowsDesc="Tắt bóng của vật thể để giảm tải đồ họa",
@@ -125,7 +127,7 @@ local Lang = {
         FloatDragHint="Kéo nút nổi để đổi vị trí (tự lưu, không vượt màn hình)",
 	},
 	en = {
-		Title="VAMPIRE OPTIMIZER V7.8.2", Search="Search features...", Restore="Restore original graphics", Save="Save settings",
+		Title="VAMPIRE OPTIMIZER V7.8.7", Search="Search features...", Restore="Restore original graphics", Save="Save settings",
 		FlatPlastic="Flat materials (Plastic)", FlatPlasticDesc="Convert surfaces to plastic; skips Lucky blocks",
 		RemoveTextures="Hide textures and decals", RemoveTexturesDesc="Hide surface textures and decals",
 		RemoveShadows="Disable shadows", RemoveShadowsDesc="Disable object shadows to reduce graphics load",
@@ -473,6 +475,7 @@ do
 		local cam = workspace.CurrentCamera
 		local cur = part
 		while cur and cur ~= workspace and cur ~= cam do
+			if cur.Name == "DebugRay" then return false end
 			if cur:IsA("Model") and Players:GetPlayerFromCharacter(cur) then break end
 			if NameIsBlock(cur.Name) then return true end
 			cur = cur.Parent
@@ -520,7 +523,8 @@ do
 		-- Ghi log 1 lần cho mỗi vật không phải khối để dễ kiểm tra nếu khối cầm tay không được nhận ra.
 		if SeenCount < 40 then
 			local key = part:GetFullName() .. "|" .. part.ClassName
-			if string.find(key, "3DClothing", 1, true) then return false end
+			if string.find(key, "3DClothing", 1, true) or BODY[part.Name] then return false end
+			if string.find(key, "DebugRay", 1, true) then return false end
 			if not Seen[key] then
 				Seen[key] = true
 				SeenCount += 1
@@ -1670,6 +1674,21 @@ do
 		if obj == customSkyInst then return end
 		local class = SkyClass(obj)
 		if not class then return end
+		-- V7.8.7: Clouds KHONG duoc doi Parent (Roblox bao "Cloud instance must exist under Terrain node").
+		-- Chi tat Enabled tai cho va nho gia tri goc de khoi phuc.
+		if class == "Clouds" then
+			for _, entry in ipairs(SkyBackups) do
+				if entry.inst == obj then
+					pcall(function() if obj.Enabled then obj.Enabled = false end end)
+					return
+				end
+			end
+			local wasEnabled = true
+			pcall(function() wasEnabled = obj.Enabled end)
+			table.insert(SkyBackups, { inst = obj, class = class, parent = obj.Parent, enabled = wasEnabled, soft = true })
+			pcall(function() obj.Enabled = false end)
+			return
+		end
 		for i = #SkyBackups, 1, -1 do
 			if SkyBackups[i].inst == obj then table.remove(SkyBackups, i) end
 		end
@@ -1682,7 +1701,10 @@ do
 		local restored = {}
 		for i = #SkyBackups, 1, -1 do
 			local entry = SkyBackups[i]
-			if not restored[entry.class] and entry.inst and entry.inst.Parent == SkyFolder then
+			if entry.soft then
+				local inst, was = entry.inst, entry.enabled
+				if inst and inst.Parent then pcall(function() inst.Enabled = was end) end
+			elseif not restored[entry.class] and entry.inst and entry.inst.Parent == SkyFolder then
 				restored[entry.class] = true
 				local target = entry.parent
 				if not target or not target.Parent then target = Lighting end
@@ -1780,7 +1802,7 @@ do
 	local function PrintReport(tag, candidates)
 		local stashed, hidden, hiddenNames = 0, 0, {}
 		for _, entry in ipairs(SkyBackups) do
-			if entry.inst and entry.inst.Parent == SkyFolder then stashed = stashed + 1 end
+			if entry.inst and ((entry.soft and entry.inst.Parent) or entry.inst.Parent == SkyFolder) then stashed = stashed + 1 end
 		end
 		for part in pairs(HiddenSkyParts) do
 			hidden = hidden + 1
@@ -1801,7 +1823,7 @@ do
 	BuildSkyReport = function()
 		local lines = {}
 		local function add(text) table.insert(lines, text) end
-		add(string.format("== VAMPIRE SKY REPORT (V7.8.1) | mode=%s | galaxyOn=%s | placeId=%s ==", tostring(Config.SkyMode), tostring(galaxyOn), tostring(game.PlaceId)))
+		add(string.format("== VAMPIRE SKY REPORT (V7.8.7) | mode=%s | galaxyOn=%s | placeId=%s ==", tostring(Config.SkyMode), tostring(galaxyOn), tostring(game.PlaceId)))
 		add("Lighting: ClockTime=" .. ReadProp(Lighting, "ClockTime") .. ", Brightness=" .. ReadProp(Lighting, "Brightness"))
 		add("-- Lighting children --")
 		for _, child in ipairs(Lighting:GetChildren()) do add("  " .. child.ClassName .. " '" .. child.Name .. "'") end
@@ -1811,7 +1833,7 @@ do
 		end
 		add("Galaxy texture preload: " .. lastPreloadInfo)
 		add("-- Stashed game sky objects --")
-		for _, entry in ipairs(SkyBackups) do add("  " .. entry.class .. " '" .. entry.inst.Name .. "' inFolder=" .. tostring(entry.inst.Parent == SkyFolder)) end
+		for _, entry in ipairs(SkyBackups) do add("  " .. entry.class .. " '" .. entry.inst.Name .. "' inFolder=" .. tostring(entry.soft and "disabled-in-place" or (entry.inst.Parent == SkyFolder))) end
 		add("-- Hidden sky parts --")
 		for part in pairs(HiddenSkyParts) do add("  " .. part:GetFullName()) end
 		add("-- Big parts (>= 800 studs) --")
