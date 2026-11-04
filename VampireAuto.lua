@@ -5,6 +5,12 @@
 --     * when ANY teleport starts (lobby -> match, rejoin, server hop) it queues a small stub, like Cat Vape,
 --       which loads that copy again in the next server.
 --   Pressing X in the menu stops it for good (until you execute it again).
+--   V7.8.6: "Ẩn texture" không còn làm mất dấu "?" / màu của Lucky Block (sảnh + trong trận), giống "Flat materials".
+--           Bỏ cảnh báo GetJoints; log "not a block" không bị 3DClothing chiếm hết.
+--   V7.8.5: Sửa khối cầm tay nhìn từ BÊN NGOÀI (góc nhìn thứ ba) bị đen: nhận cả khối nằm sâu dưới tay nhân vật
+--           hoặc hàn vào tay từ ngoài model nhân vật; đổ lại màu gốc trước khi ẩn texture.
+--   V7.8.4: Chỉ KHỐI cầm trên tay (wool, concrete, clay...) giữ màu gốc dạng nhựa một màu; kiếm/cuốc/hiệu ứng giữ như cũ.
+--   V7.8.3: Khối/vật cầm trên tay giữ màu gốc (nhựa một màu) khi bật "Ẩn texture"; không đọc được màu thì giữ texture.
 --   V7.8.2: Hotkey ẩn/hiện CẢ menu + Lego (script vẫn chạy). Nút - / click Lego chỉ ẩn menu.
 --           ToggleKey lưu dạng string để persist đúng sau restart.
 -- ====================================================================
@@ -415,6 +421,117 @@ local function isInCharacter(obj)
 	return false
 end
 
+-- Vật cầm trên tay (Tool trong nhân vật, Model gắn vào nhân vật, hoặc viewmodel trong Camera).
+-- Chỉ dùng 1 biến local "Held" để không vượt giới hạn 200 local của Lua.
+local Held = {}
+do
+	local BODY = {
+		Head = true, Torso = true, HumanoidRootPart = true,
+		["Left Arm"] = true, ["Right Arm"] = true, ["Left Leg"] = true, ["Right Leg"] = true,
+		UpperTorso = true, LowerTorso = true,
+		LeftUpperArm = true, LeftLowerArm = true, LeftHand = true,
+		RightUpperArm = true, RightLowerArm = true, RightHand = true,
+		LeftUpperLeg = true, LeftLowerLeg = true, LeftFoot = true,
+		RightUpperLeg = true, RightLowerLeg = true, RightFoot = true,
+	}
+	-- Part nằm trong phạm vi "đang cầm":
+	--   * viewmodel trong Camera (góc nhìn thứ nhất), hoặc
+	--   * BẤT KỲ vật nào gắn vào nhân vật (góc nhìn thứ ba): Tool, Model, hoặc khối nằm sâu dưới tay
+	--     (vd Character.RightHand.wool_blue.Handle). Bản cũ chỉ nhận Tool/Model nằm TRỰC TIẾP dưới nhân vật,
+	--     nên khối nhìn từ bên ngoài bị bỏ sót: texture bị ẩn mà không đổ lại màu -> khối thành đen.
+	local function InHeldScope(part)
+		local cam = workspace.CurrentCamera
+		local cur = part
+		local underAccessory = false
+		while cur and cur ~= workspace do
+			if cam and cur == cam then return true end
+			if cur:IsA("Accessory") then underAccessory = true end
+			local parent = cur.Parent
+			if parent and parent ~= workspace and parent:IsA("Model") and parent.Parent == workspace and Players:GetPlayerFromCharacter(parent) then
+				-- cur là con trực tiếp của nhân vật
+				if underAccessory then return false end -- tóc, mũ, kính, quần áo: không phải vật cầm
+				if cur == part then return not BODY[cur.Name] end -- part gắn thẳng vào nhân vật
+				return true -- Tool / Model / Folder / bộ phận cơ thể chứa part này
+			end
+			cur = parent
+		end
+		return false
+	end
+
+	-- Chỉ KHỐI (len/wool, bê tông, đất sét, kính...) mới được xử lý. Kiếm, cuốc, hiệu ứng... giữ nguyên.
+	local BLOCK_HINTS = { "wool", "carpet", "concrete", "clay", "terracotta", "glass" }
+	local function NameIsBlock(name)
+		local n = (string.lower(name):gsub("[%s_%-]", ""))
+		for _, h in ipairs(BLOCK_HINTS) do
+			if string.find(n, h, 1, true) then return true end
+		end
+		return false
+	end
+	local function IsBlockPart(part)
+		if BODY[part.Name] then return false end
+		-- 1) Tên part hoặc tên Tool/Model chứa wool, concrete, clay...
+		local cam = workspace.CurrentCamera
+		local cur = part
+		while cur and cur ~= workspace and cur ~= cam do
+			if cur:IsA("Model") and Players:GetPlayerFromCharacter(cur) then break end
+			if NameIsBlock(cur.Name) then return true end
+			cur = cur.Parent
+		end
+		-- 2) Hoặc là một khối lập phương (Part thường, không mesh)
+		if part.ClassName == "Part" and not part:FindFirstChildOfClass("SpecialMesh") then
+			local s = part.Size
+			local mx, mn = math.max(s.X, s.Y, s.Z), math.min(s.X, s.Y, s.Z)
+			if mn > 0.4 and mx / mn <= 1.25 then return true end
+		end
+		return false
+	end
+
+	-- Khối nằm ngoài model nhân vật (vd Workspace.Items.wool_blue) nhưng được Weld/Motor6D vào tay nhân vật.
+	local function WeldedToBody(part, depth, visited)
+		if not part:IsDescendantOf(workspace) then return false end
+		local ok, joints = pcall(function() return part:GetJoints() end)
+		if not ok or type(joints) ~= "table" then return false end
+		for _, j in ipairs(joints) do
+			for _, side in ipairs({ "Part0", "Part1" }) do
+				local other = nil
+				pcall(function() other = j[side] end)
+				if typeof(other) == "Instance" and other:IsA("BasePart") and not visited[other] then
+					visited[other] = true
+					if BODY[other.Name] and isInCharacter(other) then return true end
+					if depth > 1 and not other.Anchored and WeldedToBody(other, depth - 1, visited) then return true end
+				end
+			end
+		end
+		return false
+	end
+
+	local Seen, SeenCount = {}, 0
+	function Held.IsHeld(obj)
+		if not obj then return false end
+		local part = obj
+		if not obj:IsA("BasePart") then part = obj.Parent end -- Texture / Decal / SurfaceAppearance / SpecialMesh
+		if not part or not part:IsA("BasePart") then return false end
+		if not InHeldScope(part) then
+			-- Ngoài phạm vi: vẫn nhận nếu là KHỐI không neo đang hàn vào thân nhân vật.
+			if part.Anchored or not IsBlockPart(part) then return false end
+			return WeldedToBody(part, 2, { [part] = true })
+		end
+		if IsBlockPart(part) then return true end
+		-- Ghi log 1 lần cho mỗi vật không phải khối để dễ kiểm tra nếu khối cầm tay không được nhận ra.
+		if SeenCount < 40 then
+			local key = part:GetFullName() .. "|" .. part.ClassName
+			if string.find(key, "3DClothing", 1, true) then return false end
+			if not Seen[key] then
+				Seen[key] = true
+				SeenCount += 1
+				print(string.format("[Vampire Optimizer] Held (not a block, left as is): %s (%s) size=%.1f,%.1f,%.1f",
+					part:GetFullName(), part.ClassName, part.Size.X, part.Size.Y, part.Size.Z))
+			end
+		end
+		return false
+	end
+end
+
 local function SetFlatPlastic(enable)
 	Config.FlatPlastic = enable
 	task.spawn(function()
@@ -429,7 +546,7 @@ local function SetFlatPlastic(enable)
 			-- Only force SmoothPlastic on parts that do NOT have a custom MaterialVariant
 			-- (clearing MaterialVariant turns many textured parts into plain white plastic)
 			for _, v in ipairs(workspace:GetDescendants()) do
-				if v:IsA("BasePart") and not isLucky(v) and not isInCharacter(v) then
+				if v:IsA("BasePart") and not isLucky(v) and not isInCharacter(v) and not Held.IsHeld(v) then
 					local mv = ""
 					pcall(function() mv = v.MaterialVariant end)
 					if mv == nil or mv == "" then
@@ -462,6 +579,7 @@ local function SetFlatPlastic(enable)
 				end
 			end
 		end
+		if Held.Refresh then Held.Refresh() end
 	end)
 	QueueAutoSave()
 end
@@ -470,7 +588,7 @@ local function SetRemoveTextures(enable)
 	Config.RemoveTextures = enable
 	task.spawn(function()
 		for _, v in ipairs(workspace:GetDescendants()) do
-			if v:IsA("Texture") or v:IsA("Decal") then
+			if (v:IsA("Texture") or v:IsA("Decal")) and not isLucky(v) and not Held.IsHeld(v) then
 				if enable then
 					if Backup.OriginalTextures[v] == nil then Backup.OriginalTextures[v] = v.Transparency end
 					v.Transparency = 1
@@ -480,6 +598,7 @@ local function SetRemoveTextures(enable)
 				end
 			end
 		end
+		if Held.Refresh then Held.Refresh() end
 	end)
 	QueueAutoSave()
 end
@@ -996,6 +1115,269 @@ local function SetFlatHair(enable)
     Config.FlatHair = enable == true
     if Config.FlatHair then ApplyFlatHairToAllPlayers() else RestoreHairAppearance() end
     QueueAutoSave()
+end
+
+-- ==================== KHỐI CẦM TRÊN TAY: NHỰA MỘT MÀU, GIỮ MÀU GỐC ====================
+-- "Ẩn texture" làm mất lớp texture tạo màu (ví dụ len xanh -> xám). Với vật cầm trên tay, script
+-- đọc màu trung bình của texture trước, tô part bằng màu đó, rồi mới ẩn texture. Không đọc được
+-- màu thì GIỮ NGUYÊN texture (không bao giờ để khối bị xám).
+do
+	local function weak() return setmetatable({}, { __mode = "k" }) end
+	local Original, Meshes, Surfaces, Decals, State = weak(), weak(), weak(), weak(), weak()
+	local Printed = weak()
+	local Epoch = 0
+
+	-- Dự phòng cuối: đoán màu từ tên vật phẩm (vd "Blue Wool") khi không đọc được texture.
+	local NAME_HINTS = { "wool", "carpet", "concrete", "clay", "glass", "block" }
+	local NAME_COLORS = {
+		{ "lightblue", Color3.fromRGB(80, 170, 255) }, { "lightgray", Color3.fromRGB(170, 170, 170) },
+		{ "lightgrey", Color3.fromRGB(170, 170, 170) }, { "magenta", Color3.fromRGB(220, 50, 200) },
+		{ "orange", Color3.fromRGB(255, 140, 20) }, { "yellow", Color3.fromRGB(250, 230, 20) },
+		{ "purple", Color3.fromRGB(130, 40, 200) }, { "brown", Color3.fromRGB(120, 70, 30) },
+		{ "white", Color3.fromRGB(240, 240, 240) }, { "black", Color3.fromRGB(25, 25, 25) },
+		{ "green", Color3.fromRGB(30, 150, 40) }, { "lime", Color3.fromRGB(100, 230, 40) },
+		{ "pink", Color3.fromRGB(255, 130, 180) }, { "cyan", Color3.fromRGB(20, 190, 200) },
+		{ "gray", Color3.fromRGB(90, 90, 90) }, { "grey", Color3.fromRGB(90, 90, 90) },
+		{ "blue", Color3.fromRGB(10, 30, 220) }, { "red", Color3.fromRGB(220, 30, 30) },
+	}
+	local function ColorFromName(part)
+		local cam = workspace.CurrentCamera
+		local cur = part
+		while cur and cur ~= workspace and cur ~= cam do
+			if cur:IsA("Model") and Players:GetPlayerFromCharacter(cur) then break end
+			local n = (string.lower(cur.Name):gsub("[%s_%-]", ""))
+			local hinted = false
+			for _, h in ipairs(NAME_HINTS) do
+				if string.find(n, h, 1, true) then hinted = true break end
+			end
+			if hinted then
+				for _, e in ipairs(NAME_COLORS) do
+					if string.find(n, e[1], 1, true) then return e[2] end
+				end
+			end
+			cur = cur.Parent
+		end
+		return nil
+	end
+
+	local function Wanted() return Config.FlatPlastic or Config.RemoveTextures end
+
+	local function Collect(part)
+		local info = { sources = {}, decals = {}, meshes = {}, surfaces = {} }
+		local function add(id, tint, usesPartColor)
+			if type(id) == "string" and id ~= "" then
+				table.insert(info.sources, { id = id, tint = tint, partColor = usesPartColor })
+			end
+		end
+		if part:IsA("MeshPart") then
+			local id = ""
+			pcall(function() id = part.TextureID end)
+			add(id, nil, true)
+		end
+		for _, child in ipairs(part:GetChildren()) do
+			if child:IsA("SurfaceAppearance") then
+				table.insert(info.surfaces, child)
+				local id, tint = "", nil
+				pcall(function() id = child.ColorMap end)
+				pcall(function() if not IsPlaceholderHairColor(child.Color) then tint = child.Color end end)
+				add(id, tint, false)
+			elseif child:IsA("SpecialMesh") then
+				table.insert(info.meshes, child)
+				local id = ""
+				pcall(function() id = child.TextureId end)
+				add(id, nil, true)
+			elseif child:IsA("Texture") or child:IsA("Decal") then
+				table.insert(info.decals, child)
+				local id, tint = "", nil
+				pcall(function() id = child.Texture end)
+				pcall(function() local c = child.Color3 if c.R + c.G + c.B < 2.94 then tint = c end end)
+				add(id, tint, false)
+			end
+		end
+		local mvName = ""
+		pcall(function() mvName = part.MaterialVariant end)
+		if mvName ~= "" then
+			for _, mv in ipairs(MaterialService:GetDescendants()) do
+				if mv:IsA("MaterialVariant") and mv.Name == mvName then
+					local id = ""
+					pcall(function() id = mv.ColorMap end)
+					add(id, nil, true)
+					break
+				end
+			end
+		end
+		return info
+	end
+
+	local function Hex(c)
+		return string.format("%02X%02X%02X", math.floor(c.R * 255 + 0.5), math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5))
+	end
+
+	local function Apply(part)
+		if not IsRunning or not Wanted() or not part or not part:IsA("BasePart") or not part.Parent then return end
+		if State[part] then return end
+		local epoch = Epoch
+		State[part] = "pending"
+
+		if Original[part] == nil then
+			local o = { Color = part.Color, Material = part.Material, Reflectance = part.Reflectance, MaterialVariant = "", TextureID = nil }
+			pcall(function() o.MaterialVariant = part.MaterialVariant end)
+			if part:IsA("MeshPart") then pcall(function() o.TextureID = part.TextureID end) end
+			Original[part] = o
+		end
+		local o = Original[part]
+		local info = Collect(part)
+
+		if Config.FlatPlastic then
+			pcall(function()
+				part.Material = Enum.Material.SmoothPlastic
+				part.Reflectance = 0
+			end)
+		end
+		-- Chỉ "Làm phẳng vật liệu" bật: texture vẫn hiện, màu giữ nguyên.
+		if not Config.RemoveTextures then
+			State[part] = "flat"
+			return
+		end
+
+		task.spawn(function()
+			local sampled, usedSrc = nil, nil
+			for _, src in ipairs(info.sources) do
+				sampled = SampleTextureColor(src.id)
+				if sampled then usedSrc = src break end
+			end
+			if not IsRunning or epoch ~= Epoch or not part.Parent then return end
+
+			local final, how = nil, ""
+			if sampled then
+				final, how = sampled, "texture"
+				if usedSrc.tint then final = MultiplyColors(final, usedSrc.tint) end
+				if usedSrc.partColor and not IsPlaceholderHairColor(o.Color) then final = MultiplyColors(final, o.Color) end
+			elseif #info.sources == 0 and not IsPlaceholderHairColor(o.Color) then
+				final, how = o.Color, "part colour"
+			else
+				final, how = ColorFromName(part), "name"
+				if not final and not IsPlaceholderHairColor(o.Color) then final, how = o.Color, "part colour" end
+			end
+
+			if not Printed[part] then
+				Printed[part] = true
+				print(string.format("[Vampire Optimizer] Held item: %s (%s) textures=%d -> %s",
+					part:GetFullName(), part.ClassName, #info.sources,
+					final and (how .. " #" .. Hex(final)) or "no colour found, textures kept"))
+			end
+
+			if final then
+				if part:IsA("MeshPart") then pcall(function() part.TextureID = "" end) end
+				for _, m in ipairs(info.meshes) do
+					if Meshes[m] == nil then pcall(function() Meshes[m] = m.TextureId end) end
+					pcall(function() m.TextureId = "" end)
+				end
+				for _, s in ipairs(info.surfaces) do
+					if Surfaces[s] == nil then Surfaces[s] = s.Parent end
+					pcall(function() s.Parent = nil end)
+				end
+				for _, d in ipairs(info.decals) do
+					if Decals[d] == nil then pcall(function() Decals[d] = Backup.OriginalTextures[d] or d.Transparency end) end
+					pcall(function() d.Transparency = 1 end)
+				end
+				pcall(function()
+					part.Color = final
+					part.MaterialVariant = ""
+				end)
+				State[part] = "solid"
+			else
+				State[part] = "flat"
+			end
+		end)
+	end
+
+	local function Restore()
+		Epoch += 1
+		for part, o in pairs(Original) do
+			if part and part.Parent then
+				pcall(function()
+					part.Color = o.Color
+					part.Material = o.Material
+					part.Reflectance = o.Reflectance
+					part.MaterialVariant = o.MaterialVariant
+					if o.TextureID ~= nil and part:IsA("MeshPart") then part.TextureID = o.TextureID end
+				end)
+			end
+		end
+		for m, id in pairs(Meshes) do
+			if m and m.Parent then pcall(function() m.TextureId = id end) end
+		end
+		for s, parent in pairs(Surfaces) do
+			pcall(function()
+				if parent and parent.Parent and s.Parent == nil then s.Parent = parent end
+			end)
+		end
+		for d, t in pairs(Decals) do
+			if d and d.Parent then pcall(function() d.Transparency = t end) end
+		end
+		Original, Meshes, Surfaces, Decals, State = weak(), weak(), weak(), weak(), weak()
+	end
+
+	local function ScanAll()
+		local cam = workspace.CurrentCamera
+		if cam then
+			for _, d in ipairs(cam:GetDescendants()) do
+				if d:IsA("BasePart") and Held.IsHeld(d) then Apply(d) end
+			end
+		end
+		for _, player in ipairs(Players:GetPlayers()) do
+			local character = player.Character
+			if character then
+				for _, d in ipairs(character:GetDescendants()) do
+					if d:IsA("BasePart") and Held.IsHeld(d) then Apply(d) end
+				end
+			end
+		end
+		-- Khối cầm tay nằm ngoài model nhân vật (hàn vào tay): quét workspace, nhường CPU để không giật.
+		local scanEpoch = Epoch
+		task.spawn(function()
+			local n = 0
+			for _, d in ipairs(workspace:GetDescendants()) do
+				if d:IsA("BasePart") and not d.Anchored and Held.IsHeld(d) then Apply(d) end
+				n += 1
+				if n % 1500 == 0 then task.wait() end
+				if not IsRunning or scanEpoch ~= Epoch then return end
+			end
+		end)
+	end
+
+	function Held.Refresh()
+		Restore()
+		if IsRunning and Wanted() then ScanAll() end
+	end
+
+	function Held.OnAdded(v)
+		if not IsRunning or not Wanted() then return end
+		if v:IsA("BasePart") then
+			if Held.IsHeld(v) then Apply(v) end
+		elseif v:IsA("JointInstance") or v:IsA("WeldConstraint") then
+			task.delay(0.15, function()
+				if not IsRunning or not v.Parent then return end
+				for _, side in ipairs({ "Part0", "Part1" }) do
+					local p = nil
+					pcall(function() p = v[side] end)
+					if typeof(p) == "Instance" and p:IsA("BasePart") and p.Parent and not State[p] and Held.IsHeld(p) then
+						Apply(p)
+					end
+				end
+			end)
+		elseif v:IsA("Texture") or v:IsA("Decal") or v:IsA("SurfaceAppearance") or v:IsA("SpecialMesh") then
+			local p = v.Parent
+			if p and p:IsA("BasePart") and Held.IsHeld(p) then
+				-- Texture đến sau part: xử lý lại part này.
+				if State[p] == "solid" or State[p] == "flat" then State[p] = nil end
+				task.delay(0.15, function()
+					if IsRunning and p.Parent then Apply(p) end
+				end)
+			end
+		end
+	end
 end
 
 local function HookPlayerHair(player)
@@ -3403,7 +3785,7 @@ Connect(workspace.DescendantAdded, function(v)
 				v.Enabled = (Config.FxScale > 0) and Backup.OriginalFx[v].Enabled
 			end
 		end
-		if Config.RemoveTextures and (v:IsA("Texture") or v:IsA("Decal")) then
+		if Config.RemoveTextures and (v:IsA("Texture") or v:IsA("Decal")) and not isLucky(v) and not Held.IsHeld(v) then
 			if Backup.OriginalTextures[v] == nil then Backup.OriginalTextures[v] = v.Transparency end
 			v.Transparency = 1
 		end
@@ -3411,7 +3793,7 @@ Connect(workspace.DescendantAdded, function(v)
 			if Backup.OriginalShadows[v] == nil then Backup.OriginalShadows[v] = v.CastShadow end
 			v.CastShadow = false
 		end
-		if Config.FlatPlastic and v:IsA("BasePart") and not isLucky(v) and not isInCharacter(v) then
+		if Config.FlatPlastic and v:IsA("BasePart") and not isLucky(v) and not isInCharacter(v) and not Held.IsHeld(v) then
 			local mv = ""
 			pcall(function() mv = v.MaterialVariant end)
 			if mv == nil or mv == "" then
@@ -3423,6 +3805,7 @@ Connect(workspace.DescendantAdded, function(v)
 			end
 		end
 		if Config.FlatHair then ApplyFlatHairObject(v) end
+		if Held.OnAdded then Held.OnAdded(v) end
 		if Config.StripClothing and IsRemovableClothing(v) then StripClothingInstance(v) end
 	end)
 end)
