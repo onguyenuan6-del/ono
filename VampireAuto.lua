@@ -1,10 +1,11 @@
 -- ====================================================================
---   VAMPIRE OPTIMIZER V7.9.0 - RESPONSIVE UI / RESOLUTION PROFILES
+--   VAMPIRE OPTIMIZER V7.9.1 - RESPONSIVE UI / RESOLUTION PROFILES
 --   Paste this ONE file into the executor. Nothing else is needed (no URL, no outside app, no manual file):
 --     * it saves its own copy to workspace/VampireOptimizer/main.lua
 --     * when ANY teleport starts (lobby -> match, rejoin, server hop) it queues a small stub, like Cat Vape,
 --       which loads that copy again in the next server.
 --   Pressing X in the menu stops it for good (until you execute it again).
+--   V7.9.1: Add local Full Bright toggle with automatic re-scan and original-lighting restore.
 --   V7.9.0: Responsive UI for 7680x4320 through 256x144; wrap long descriptions, fit menu to viewport, detect listed display profiles.
 --   V7.8.9: Add viewport resolution detection and adaptive low graphics quality (144p is a reference floor; no true render downscale API).
 --   V7.8.8: Re-apply Fog when the game overwrites Lighting after teleport; retry Flat Plastic during map loading.
@@ -22,7 +23,8 @@
 
 local VAMPIRE_SOURCE = [==[
 -- ====================================================================
---   VAMPIRE OPTIMIZER V7.9.0
+--   VAMPIRE OPTIMIZER V7.9.1
+--   V7.9.1: Local Full Bright toggle, auto re-scan, and original-lighting restore.
 --   V7.8.2: Hotkey hides menu+Lego; custom vampire icon; ToggleKey JSON fix.
 --   V7.8.1: Fixed Top Border rounded corner bug, changed floating icon to a Lego Brick.
 -- ====================================================================
@@ -103,10 +105,11 @@ end
 
 local Lang = {
 	vi = {
-		Title="VAMPIRE OPTIMIZER V7.9.0", Search="Tìm kiếm tính năng...", Restore="Khôi phục đồ họa gốc", Save="Lưu cấu hình",
+		Title="VAMPIRE OPTIMIZER V7.9.1", Search="Tìm kiếm tính năng...", Restore="Khôi phục đồ họa gốc", Save="Lưu cấu hình",
 		FlatPlastic="Làm phẳng vật liệu (Nhựa)", FlatPlasticDesc="Đổi bề mặt sang nhựa; bỏ qua khối Lucky",
 		RemoveTextures="Ẩn Texture và Decal", RemoveTexturesDesc="Ẩn texture và decal trên bề mặt",
 		RemoveShadows="Tắt bóng đổ", RemoveShadowsDesc="Tắt bóng của vật thể để giảm tải đồ họa",
+		FullBrightTitle="Full Bright (tăng độ sáng màn hình)", FullBrightDesc="Tự quét và giữ môi trường sáng trên máy bạn; tắt để khôi phục ánh sáng ban đầu",
 		FxScaleTitle="Giảm hiệu ứng (0% - 100%)", FxScaleDesc="0% = tắt; 50% = giảm một nửa; 100% = mặc định",
 		RenderDistTitle="Khoảng sương mù", RenderDistDesc="Chỉ chỉnh Fog; không vượt giới hạn render hoặc Streaming của Roblox",
 		EngineQualityTitle="Chất lượng đồ họa (Level 1 - 21)", EngineQualityDesc="Level 1 nhẹ nhất; tầm nhìn vẫn tối đa nếu bật Giữ tầm nhìn",
@@ -131,10 +134,11 @@ local Lang = {
         FloatDragHint="Kéo nút nổi để đổi vị trí (tự lưu, không vượt màn hình)",
 	},
 	en = {
-		Title="VAMPIRE OPTIMIZER V7.9.0", Search="Search features...", Restore="Restore original graphics", Save="Save settings",
+		Title="VAMPIRE OPTIMIZER V7.9.1", Search="Search features...", Restore="Restore original graphics", Save="Save settings",
 		FlatPlastic="Flat materials (Plastic)", FlatPlasticDesc="Convert surfaces to plastic; skips Lucky blocks",
 		RemoveTextures="Hide textures and decals", RemoveTexturesDesc="Hide surface textures and decals",
 		RemoveShadows="Disable shadows", RemoveShadowsDesc="Disable object shadows to reduce graphics load",
+		FullBrightTitle="Full Bright (brighten your screen)", FullBrightDesc="Auto-scans and keeps your local scene bright; turn off to restore original lighting",
 		FxScaleTitle="Effect reduction (0% - 100%)", FxScaleDesc="0% = off; 50% = half; 100% = default",
 		RenderDistTitle="Fog distance", RenderDistDesc="Changes fog only; cannot bypass Roblox render or Streaming limits",
 		EngineQualityTitle="Graphics quality (Level 1 - 21)", EngineQualityDesc="Level 1 is lightest; view stays max if Keep view distance is on",
@@ -216,6 +220,11 @@ local Backup = {
 		FogStart = Lighting.FogStart,
 		FogEnd = Lighting.FogEnd,
 		FogColor = Lighting.FogColor,
+		Brightness = Lighting.Brightness,
+		ClockTime = Lighting.ClockTime,
+		Ambient = Lighting.Ambient,
+		OutdoorAmbient = Lighting.OutdoorAmbient,
+		ExposureCompensation = Lighting.ExposureCompensation,
 		EnvironmentDiffuseScale = Lighting.EnvironmentDiffuseScale,
 		EnvironmentSpecularScale = Lighting.EnvironmentSpecularScale,
 	},
@@ -275,6 +284,7 @@ local Config = {
 	FlatPlastic = false,
 	RemoveTextures = false,
 	RemoveShadows = false,
+	FullBright = false,
 	FxScale = 100,
 	RenderDistance = 100000,
 	EngineQuality = 1,
@@ -377,6 +387,7 @@ Config.AutoResolutionQuality = Config.AutoResolutionQuality ~= false
 Config.FlatPlastic = Config.FlatPlastic == true
 Config.RemoveTextures = Config.RemoveTextures == true
 Config.RemoveShadows = Config.RemoveShadows == true
+Config.FullBright = Config.FullBright == true
 Config.LiteTerrain = Config.LiteTerrain == true
 Config.LiveMonitorSet = Config.LiveMonitorSet == true
 if Config.LiveMonitorSet then Config.LiveMonitor = Config.LiveMonitor == true else Config.LiveMonitor = true end
@@ -734,6 +745,60 @@ local function SetRenderDistance(dist)
 	Lighting.FogStart = dist
 	Lighting.FogEnd = dist + math.max(1000, math.floor(dist * 0.1))
 	Lighting.FogColor = Backup.Lighting.FogColor
+	QueueAutoSave()
+end
+
+-- Full Bright chỉ thay đổi Lighting ở client hiện tại. Các giá trị gốc được lưu
+-- khi script khởi động để có thể khôi phục chính xác khi người dùng tắt tính năng.
+local FullBrightRevision = 0
+local FULL_BRIGHT_VALUES = {
+	Brightness = 3,
+	ClockTime = 14,
+	Ambient = Color3.new(1, 1, 1),
+	OutdoorAmbient = Color3.new(1, 1, 1),
+	ExposureCompensation = 0.5,
+}
+
+local function ApplyFullBrightValues()
+	if not IsRunning or not Config.FullBright then return end
+	for property, value in pairs(FULL_BRIGHT_VALUES) do
+		pcall(function() Lighting[property] = value end)
+	end
+end
+
+local function RestoreFullBrightValues()
+	for _, property in ipairs({ "Brightness", "ClockTime", "Ambient", "OutdoorAmbient", "ExposureCompensation" }) do
+		local value = Backup.Lighting[property]
+		if value ~= nil then pcall(function() Lighting[property] = value end) end
+	end
+end
+
+local function ScheduleFullBrightReapply()
+	if not IsRunning or not Config.FullBright then return end
+	task.defer(ApplyFullBrightValues)
+end
+
+for _, property in ipairs({ "Brightness", "ClockTime", "Ambient", "OutdoorAmbient", "ExposureCompensation" }) do
+	Connect(Lighting:GetPropertyChangedSignal(property), ScheduleFullBrightReapply)
+end
+
+local function SetFullBright(enable)
+	Config.FullBright = enable == true
+	FullBrightRevision += 1
+	local revision = FullBrightRevision
+	if Config.FullBright then
+		ApplyFullBrightValues()
+		task.spawn(function()
+			while IsRunning and Config.FullBright and revision == FullBrightRevision do
+				task.wait(2)
+				if IsRunning and Config.FullBright and revision == FullBrightRevision then
+					ApplyFullBrightValues()
+				end
+			end
+		end)
+	else
+		RestoreFullBrightValues()
+	end
 	QueueAutoSave()
 end
 
@@ -2072,6 +2137,7 @@ local function RestoreAllGraphics()
 	SetFlatHair(false)
 	SetStripClothing(false)
 	ApplyFxScale(100)
+	SetFullBright(false)
 	Config.RenderDistance = math.clamp(math.floor(Backup.Lighting.FogStart), 200, 100000)
 	QueueAutoSave()
 	SetLiteTerrain(false)
@@ -2096,7 +2162,7 @@ pcall(function() if type(gethui) == "function" then ParentTarget = gethui() end 
 if not ParentTarget then pcall(function() ParentTarget = game:GetService("CoreGui") end) end
 if not ParentTarget then ParentTarget = LocalPlayer:WaitForChild("PlayerGui") end
 
-for _, oldName in ipairs({ "VampireOptimizer_GUI_V6_8", "VampireOptimizer_GUI_V7_2", "VampireOptimizer_GUI_V7_7", "VampireOptimizer_GUI_V7_8", "VampireOptimizer_GUI_V7_8_9", "VampireOptimizer_Float_V7_2", "VampireOptimizer_Float_V7_7", "VampireOptimizer_Float_V7_8", "VampireOptimizer_Float_V7_8_9" }) do
+for _, oldName in ipairs({ "VampireOptimizer_GUI_V6_8", "VampireOptimizer_GUI_V7_2", "VampireOptimizer_GUI_V7_7", "VampireOptimizer_GUI_V7_8", "VampireOptimizer_GUI_V7_8_9", "VampireOptimizer_GUI_V7_9_0", "VampireOptimizer_Float_V7_2", "VampireOptimizer_Float_V7_7", "VampireOptimizer_Float_V7_8", "VampireOptimizer_Float_V7_8_9", "VampireOptimizer_Float_V7_9_0" }) do
 	pcall(function()
 		local old = ParentTarget:FindFirstChild(oldName)
 		if old then old:Destroy() end
@@ -2104,7 +2170,7 @@ for _, oldName in ipairs({ "VampireOptimizer_GUI_V6_8", "VampireOptimizer_GUI_V7
 end
 
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "VampireOptimizer_GUI_V7_9_0"
+ScreenGui.Name = "VampireOptimizer_GUI_V7_9_1"
 ScreenGui.DisplayOrder = 2147483000
 ScreenGui.IgnoreGuiInset = true
 ScreenGui.ResetOnSpawn = false
@@ -2113,7 +2179,7 @@ ScreenGui.Enabled = true
 ScreenGui.Parent = ParentTarget
 
 local ToggleGui = Instance.new("ScreenGui")
-ToggleGui.Name = "VampireOptimizer_Float_V7_9_0"
+ToggleGui.Name = "VampireOptimizer_Float_V7_9_1"
 ToggleGui.DisplayOrder = 2147483001
 ToggleGui.IgnoreGuiInset = true
 ToggleGui.ResetOnSpawn = false
@@ -3498,6 +3564,7 @@ end
 local syncPlast = CreateToggleCard("FlatPlastic", "FlatPlastic", "FlatPlasticDesc", Config.FlatPlastic, function(s) SetFlatPlastic(s) end)
 local syncTex = CreateToggleCard("RemoveTextures", "RemoveTextures", "RemoveTexturesDesc", Config.RemoveTextures, function(s) SetRemoveTextures(s) end)
 local syncShad = CreateToggleCard("RemoveShadows", "RemoveShadows", "RemoveShadowsDesc", Config.RemoveShadows, function(s) SetRemoveShadows(s) end)
+local syncFullBright = CreateToggleCard("FullBright", "FullBrightTitle", "FullBrightDesc", Config.FullBright, function(s) SetFullBright(s) end)
 local syncFx = CreateFxSliderCard()
 local syncDist = CreateRenderDistanceCard()
 local syncEng = CreateEngineQualityCard()
@@ -4044,6 +4111,7 @@ Connect(RestoreBtn.MouseButton1Down, function()
 	syncPlast(false)
 	syncTex(false)
 	syncShad(false)
+	syncFullBright(false)
 	syncFx(100)
 	syncDist(Config.RenderDistance, false)
 	local originalQualityName = Backup.InitialEngineQuality.Name
@@ -4129,6 +4197,7 @@ Config.FlatHair = true
 SafeApplySaved("FlatPlastic", function() SetFlatPlastic(Config.FlatPlastic) end)
 SafeApplySaved("RemoveTextures", function() SetRemoveTextures(Config.RemoveTextures) end)
 SafeApplySaved("RemoveShadows", function() SetRemoveShadows(Config.RemoveShadows) end)
+SafeApplySaved("FullBright", function() SetFullBright(Config.FullBright) end)
 SafeApplySaved("FxScale", function() ApplyFxScale(Config.FxScale) end)
 SafeApplySaved("FogDistance", function() SetRenderDistance(Config.RenderDistance) end)
 task.delay(1.0, ScheduleFogReapply)
