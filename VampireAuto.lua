@@ -1,5 +1,5 @@
 -- ====================================================================
---   VAMPIRE OPTIMIZER V7.9.5 - HIDDEN LEGO + START HIDDEN
+--   VAMPIRE OPTIMIZER V7.9.6 - FOG + ATMOSPHERE + HIDDEN LEGO
 --   Paste this ONE file into the executor. Nothing else is needed (no URL, no outside app, no manual file):
 --     * it saves its own copy to workspace/VampireOptimizer/main.lua
 --     * when ANY teleport starts (lobby -> match, rejoin, server hop) it queues a small stub, like Cat Vape,
@@ -8,6 +8,7 @@
 --   V7.9.2: Add local Full Bright toggle with automatic re-scan and original-lighting restore.
 --   V7.9.5: Split Hidden Lego (circle-only float) from Start hidden (hide menu on startup/teleport).
 --   V7.9.5: Move both menu controls to the top of the list so they are immediately visible.
+--   V7.9.6: Fog distance now also controls local Atmosphere Density/Haze and restores originals.
 --   V7.9.0: Responsive UI for 7680x4320 through 256x144; wrap long descriptions, fit menu to viewport, detect listed display profiles.
 --   V7.8.9: Add viewport resolution detection and adaptive low graphics quality (144p is a reference floor; no true render downscale API).
 --   V7.8.8: Re-apply Fog when the game overwrites Lighting after teleport; retry Flat Plastic during map loading.
@@ -25,7 +26,8 @@
 
 local VAMPIRE_SOURCE = [==[
 -- ====================================================================
---   VAMPIRE OPTIMIZER V7.9.5
+--   VAMPIRE OPTIMIZER V7.9.6
+--   V7.9.6: Fog distance controls legacy Fog and Atmosphere Density/Haze locally.
 --   V7.9.5: Separate Hidden Lego (circle-only button) and Start hidden (menu starts closed).
 --   V7.9.5: Put both controls first in the settings list; no search is needed.
 --   V7.8.2: Hotkey hides menu+Lego; custom vampire icon; ToggleKey JSON fix.
@@ -108,13 +110,14 @@ end
 
 local Lang = {
 	vi = {
-		Title="VAMPIRE OPTIMIZER V7.9.5", Search="Tìm kiếm tính năng...", Restore="Khôi phục đồ họa gốc", Save="Lưu cấu hình",
+		Title="VAMPIRE OPTIMIZER V7.9.6", Search="Tìm kiếm tính năng...", Restore="Khôi phục đồ họa gốc", Save="Lưu cấu hình",
 		FlatPlastic="Làm phẳng vật liệu (Nhựa)", FlatPlasticDesc="Đổi bề mặt sang nhựa; bỏ qua khối Lucky",
 		RemoveTextures="Ẩn Texture và Decal", RemoveTexturesDesc="Ẩn texture và decal trên bề mặt",
 		RemoveShadows="Tắt bóng đổ", RemoveShadowsDesc="Tắt bóng của vật thể để giảm tải đồ họa",
 		FullBrightTitle="Full Bright (tăng độ sáng màn hình)", FullBrightDesc="Tự quét và giữ môi trường sáng trên máy bạn; tắt để khôi phục ánh sáng ban đầu",
 		FxScaleTitle="Giảm hiệu ứng (0% - 100%)", FxScaleDesc="0% = tắt; 50% = giảm một nửa; 100% = mặc định",
-		RenderDistTitle="Khoảng sương mù", RenderDistDesc="Chỉ chỉnh Fog; không vượt giới hạn render hoặc Streaming của Roblox",
+		RenderDistTitle="Fog / Atmosphere Distance", RenderDistDesc="200 = sương dày; 100000 = giảm sương. Không tăng tải map.",
+        FogAtmosphereStatus="Đã phát hiện Atmosphere: %d | đang chỉnh Density/Haze", FogLegacyStatus="Không phát hiện Atmosphere | đang chỉnh Fog truyền thống",
 		EngineQualityTitle="Chất lượng đồ họa (Level 1 - 21)", EngineQualityDesc="Level 1 nhẹ nhất; tầm nhìn vẫn tối đa nếu bật Giữ tầm nhìn",
 		ResolutionTitle="Tự nhận diện độ phân giải / tối ưu đồ họa", ResolutionDesc="Nhận diện độ phân giải và tự co giãn giao diện từ 256×144 đến 7680×4320. Chỉ giảm Graphics Level, không ép độ phân giải render thật.", ResolutionStatus="Viewport: %dx%d | Màn hình: %s",
 		LiteTerrain="Tối ưu địa hình", LiteTerrainDesc="Giảm sóng nước, phản xạ và cỏ trang trí",
@@ -138,13 +141,14 @@ local Lang = {
         FloatDragHint="Kéo nút nổi để đổi vị trí (tự lưu, không vượt màn hình)",
 	},
 	en = {
-		Title="VAMPIRE OPTIMIZER V7.9.5", Search="Search features...", Restore="Restore original graphics", Save="Save settings",
+		Title="VAMPIRE OPTIMIZER V7.9.6", Search="Search features...", Restore="Restore original graphics", Save="Save settings",
 		FlatPlastic="Flat materials (Plastic)", FlatPlasticDesc="Convert surfaces to plastic; skips Lucky blocks",
 		RemoveTextures="Hide textures and decals", RemoveTexturesDesc="Hide surface textures and decals",
 		RemoveShadows="Disable shadows", RemoveShadowsDesc="Disable object shadows to reduce graphics load",
 		FullBrightTitle="Full Bright (brighten your screen)", FullBrightDesc="Auto-scans and keeps your local scene bright; turn off to restore original lighting",
 		FxScaleTitle="Effect reduction (0% - 100%)", FxScaleDesc="0% = off; 50% = half; 100% = default",
-		RenderDistTitle="Fog distance", RenderDistDesc="Changes fog only; cannot bypass Roblox render or Streaming limits",
+		RenderDistTitle="Fog / Atmosphere distance", RenderDistDesc="200 = heavy fog; 100000 = clearer. Does not increase map loading.",
+        FogAtmosphereStatus="Atmosphere detected: %d | controlling Density/Haze", FogLegacyStatus="No Atmosphere detected | controlling legacy Fog",
 		EngineQualityTitle="Graphics quality (Level 1 - 21)", EngineQualityDesc="Level 1 is lightest; view stays max if Keep view distance is on",
 		ResolutionTitle="Auto-detect resolution / optimize graphics", ResolutionDesc="Detects the viewport and scales the UI from 256×144 up to 7680×4320. Lowers Graphics Level only; it does not force render resolution.", ResolutionStatus="Viewport: %dx%d | Display: %s",
 		LiteTerrain="Lite terrain", LiteTerrainDesc="Reduces water waves, reflections, and decorative grass",
@@ -244,6 +248,7 @@ local Backup = {
 	OriginalHairMeshes = {},
 	OriginalHairSurface = {},
 	OriginalSkies = {},
+	OriginalAtmospheres = setmetatable({}, { __mode = "k" }),
 	Terrain = {
 		Decoration = false,
 		WaterWaveSize = 0.15,
@@ -728,6 +733,69 @@ end
 
 local FogApplyRevision = 0
 local FogOverrideEnabled = true
+-- Keep the Atmosphere helpers in one table to avoid increasing the chunk's local-register count.
+local AtmosphereControl = {
+	Hooks = setmetatable({}, { __mode = "k" }),
+	Applying = false,
+	RefreshStatus = nil,
+}
+
+AtmosphereControl.Capture = function(atmosphere)
+	if not atmosphere or not atmosphere:IsA("Atmosphere") then return end
+	if Backup.OriginalAtmospheres[atmosphere] ~= nil then return end
+	local ok, state = pcall(function()
+		return { Density = atmosphere.Density, Haze = atmosphere.Haze }
+	end)
+	if ok and state then Backup.OriginalAtmospheres[atmosphere] = state end
+end
+
+AtmosphereControl.Count = function()
+	local count = 0
+	for _, obj in ipairs(Lighting:GetDescendants()) do
+		if obj:IsA("Atmosphere") then count += 1 end
+	end
+	return count
+end
+
+-- Atmosphere makes Lighting's legacy Fog properties inactive. Map the same
+-- 200..100000 slider to Density/Haze so the control has a visible local effect.
+-- Lower distance = stronger haze; higher distance = clearer atmosphere.
+AtmosphereControl.Apply = function(dist)
+	local strength = 1 - math.clamp((dist - 200) / 99800, 0, 1)
+	local targetDensity = 0.50 * strength
+	local targetHaze = 2.50 * strength
+	local count = 0
+	AtmosphereControl.Applying = true
+	local ok = pcall(function()
+		for _, obj in ipairs(Lighting:GetDescendants()) do
+			if obj:IsA("Atmosphere") then
+				AtmosphereControl.Capture(obj)
+				pcall(function()
+					obj.Density = targetDensity
+					obj.Haze = targetHaze
+				end)
+				count += 1
+			end
+		end
+	end)
+	AtmosphereControl.Applying = false
+	if not ok then return count end
+	return count
+end
+
+AtmosphereControl.Restore = function()
+	AtmosphereControl.Applying = true
+	for atmosphere, state in pairs(Backup.OriginalAtmospheres) do
+		if atmosphere and state then
+			pcall(function()
+				atmosphere.Density = state.Density
+				atmosphere.Haze = state.Haze
+			end)
+		end
+	end
+	AtmosphereControl.Applying = false
+end
+
 local function ScheduleFogReapply()
 	if not IsRunning or not FogOverrideEnabled then return end
 	FogApplyRevision += 1
@@ -749,8 +817,43 @@ local function ScheduleFogReapply()
 				Lighting.FogColor = Backup.Lighting.FogColor
 			end)
 		end
+		AtmosphereControl.Apply(dist)
+		if AtmosphereControl.RefreshStatus then pcall(AtmosphereControl.RefreshStatus) end
 	end)
 end
+
+AtmosphereControl.Hook = function(atmosphere)
+	if not atmosphere or not atmosphere:IsA("Atmosphere") then return end
+	AtmosphereControl.Capture(atmosphere)
+	if AtmosphereControl.Hooks[atmosphere] then return end
+	AtmosphereControl.Hooks[atmosphere] = true
+	for _, property in ipairs({ "Density", "Haze" }) do
+		Connect(atmosphere:GetPropertyChangedSignal(property), function()
+			if not AtmosphereControl.Applying and FogOverrideEnabled then ScheduleFogReapply() end
+		end)
+	end
+end
+
+-- Capture existing Atmosphere objects and track objects inserted during map loads/teleports.
+for _, obj in ipairs(Lighting:GetDescendants()) do
+	if obj:IsA("Atmosphere") then AtmosphereControl.Hook(obj) end
+end
+Connect(Lighting.DescendantAdded, function(obj)
+	if obj:IsA("Atmosphere") then
+		-- Give the experience a moment to assign its initial Density/Haze after parenting.
+		task.delay(0.10, function()
+			if not IsRunning or not obj or not obj.Parent then return end
+			AtmosphereControl.Hook(obj)
+			ScheduleFogReapply()
+			if AtmosphereControl.RefreshStatus then pcall(AtmosphereControl.RefreshStatus) end
+		end)
+	end
+end)
+Connect(Lighting.DescendantRemoving, function(obj)
+	if obj:IsA("Atmosphere") and AtmosphereControl.RefreshStatus then
+		task.defer(AtmosphereControl.RefreshStatus)
+	end
+end)
 
 -- The experience may write its own fog values after the queued script starts in a new server.
 Connect(Lighting:GetPropertyChangedSignal("FogStart"), ScheduleFogReapply)
@@ -761,9 +864,13 @@ local function SetRenderDistance(dist)
 	dist = math.clamp(math.floor(tonumber(dist) or 100000), 200, 100000)
 	FogOverrideEnabled = true
 	Config.RenderDistance = dist
-	Lighting.FogStart = dist
-	Lighting.FogEnd = dist + math.max(1000, math.floor(dist * 0.1))
-	Lighting.FogColor = Backup.Lighting.FogColor
+	pcall(function()
+		Lighting.FogStart = dist
+		Lighting.FogEnd = dist + math.max(1000, math.floor(dist * 0.1))
+		Lighting.FogColor = Backup.Lighting.FogColor
+	end)
+	AtmosphereControl.Apply(dist)
+	if AtmosphereControl.RefreshStatus then pcall(AtmosphereControl.RefreshStatus) end
 	QueueAutoSave()
 end
 
@@ -2161,6 +2268,7 @@ local function RestoreAllGraphics()
 	QueueAutoSave()
 	SetLiteTerrain(false)
 	ApplySkyMode("Default")
+	AtmosphereControl.Restore()
 	FrmFlag.Restore()
 	pcall(function() settings().Rendering.QualityLevel = Backup.InitialEngineQuality end)
 	Lighting.GlobalShadows = Backup.Lighting.GlobalShadows
@@ -3046,7 +3154,7 @@ end
 local function CreateRenderDistanceCard()
 	local Card = Instance.new("Frame")
 	Card.Name = "RenderDist " .. T("RenderDistTitle")
-	Card.Size = UDim2.new(1, -8, 0, 75)
+	Card.Size = UDim2.new(1, -8, 0, 86)
 	Card.BackgroundColor3 = Color3.fromRGB(26, 10, 14)
 	Card.Parent = Scroll
 	Instance.new("UICorner", Card).CornerRadius = UDim.new(0, 6)
@@ -3073,6 +3181,22 @@ local function CreateRenderDistanceCard()
 	Sub.TextXAlignment = Enum.TextXAlignment.Left
 	Sub.Parent = Card
 
+	local Status = Instance.new("TextLabel")
+	Status.Size = UDim2.new(1, -20, 0, 13)
+	Status.Position = UDim2.new(0, 10, 0, 42)
+	Status.BackgroundTransparency = 1
+	Status.TextColor3 = Color3.fromRGB(190, 125, 135)
+	Status.Font = Enum.Font.Gotham
+	Status.TextSize = 10
+	Status.TextXAlignment = Enum.TextXAlignment.Left
+	Status.TextTruncate = Enum.TextTruncate.AtEnd
+	Status.Parent = Card
+	AtmosphereControl.RefreshStatus = function()
+		local count = AtmosphereControl.Count()
+		Status.Text = (count > 0) and string.format(T("FogAtmosphereStatus"), count) or T("FogLegacyStatus")
+	end
+	AtmosphereControl.RefreshStatus()
+
 	local ValInput = Instance.new("TextBox")
 	ValInput.Size = UDim2.new(0, 48, 0, 22)
 	ValInput.Position = UDim2.new(1, -58, 0, 6)
@@ -3085,8 +3209,8 @@ local function CreateRenderDistanceCard()
 	Instance.new("UICorner", ValInput).CornerRadius = UDim.new(0, 4)
 
 	local SliderBar = Instance.new("TextButton")
-	SliderBar.Size = UDim2.new(1, -20, 0, 10)
-	SliderBar.Position = UDim2.new(0, 10, 0, 48)
+	SliderBar.Size = UDim2.new(1, -20, 0, 9)
+	SliderBar.Position = UDim2.new(0, 10, 0, 66)
 	SliderBar.BackgroundColor3 = Color3.fromRGB(45, 16, 22)
 	SliderBar.Text = ""
 	SliderBar.AutoButtonColor = false
@@ -3140,6 +3264,7 @@ local function CreateRenderDistanceCard()
 	RegisterLangRefresh(function()
 		Label.Text = T("RenderDistTitle")
 		Sub.Text = T("RenderDistDesc")
+		if AtmosphereControl.RefreshStatus then AtmosphereControl.RefreshStatus() end
 	end)
 	table.insert(allCards, Card)
 	return function(newVal, shouldApply)
