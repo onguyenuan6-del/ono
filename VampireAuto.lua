@@ -9,6 +9,7 @@
 --   V7.9.5: Split Hidden Lego (circle-only float) from Start hidden (hide menu on startup/teleport).
 --   V7.9.5: Move both menu controls to the top of the list so they are immediately visible.
 --   Search/display fix: keep Graphics Quality and Toggle UI Hotkey visible near the top; search indexes button text.
+--   Hotkey behavior: hide/show the menu and the entire floating button (logo + red circle).
 --   V7.9.7: Fix Graphics Quality applying Level 21 when Keep max view distance is enabled; add engine readback status.
 --   V7.9.6: Fog distance now also controls local Atmosphere Density/Haze and restores originals.
 --   V7.9.0: Responsive UI for 7680x4320 through 256x144; wrap long descriptions, fit menu to viewport, detect listed display profiles.
@@ -140,9 +141,9 @@ local Lang = {
 		AutoSaveTitle="Tự động lưu tùy chọn", AutoSaveDesc="Tự lưu sau khi thay đổi (cần executor hỗ trợ ghi file)",
 		ServerHopTitle="Đổi server công khai ngẫu nhiên", ServerHopDesc="Gửi yêu cầu Roblox matchmaking vào một phiên công khai của game hiện tại.", ServerHopButton="ĐỔI SERVER", ServerHopCopy="SAO CHÉP LINK SERVER", ServerHopCooldown="Vui lòng đợi trước khi thử lại.", ServerHopCopied="Đã sao chép link server.", ServerHopCopyManual="Không có clipboard API; mở link thủ công.", 
         On="BẬT", Off="TẮT", WaitingCharacter="Đang chờ nhân vật...",
-        HotkeyTitle="Phím tắt ẩn/hiện UI", HotkeyDesc="Bấm vào nút để đổi phím tắt. Mặc định: Không có.", HotkeyNone="KHÔNG CÓ", HotkeyWaiting="ĐANG CHỜ PHÍM...", HotkeyClear="XÓA PHÍM",
-        HiddenLegoTitle="Ẩn Lego", HiddenLegoDesc="Ẩn logo trên nút nổi, chỉ giữ nút tròn màu để bấm mở menu.",
-        StartHiddenTitle="Ẩn menu khi khởi động", StartHiddenDesc="Khi chạy script hoặc vào server mới, menu tự ẩn; nút Lego vẫn hiện để mở menu.",
+        HotkeyTitle="Phím tắt ẩn/hiện UI", HotkeyDesc="Dùng phím đã chọn để ẩn/hiện menu và toàn bộ nút nổi (logo + vòng tròn đỏ).", HotkeyNone="KHÔNG CÓ", HotkeyWaiting="ĐANG CHỜ PHÍM...", HotkeyClear="XÓA PHÍM",
+        HiddenLegoTitle="Ẩn logo Lego (giữ vòng tròn đỏ)", HiddenLegoDesc="Ẩn biểu tượng ở giữa; vẫn giữ nút tròn đỏ để mở/đóng menu.",
+        StartHiddenTitle="Ẩn menu khi khởi động", StartHiddenDesc="Khi chạy script hoặc vào server mới, menu tự ẩn; nút nổi chỉ hiện nếu tùy chọn Ẩn toàn bộ nút Lego đang tắt.",
         FloatSeeThroughTitle="Nút nổi xuyên thấu", FloatSeeThroughDesc="Nút tròn bóng mờ, vẫn nhìn thấy chữ và thông báo game phía sau",
         FloatDragHint="Kéo nút nổi để đổi vị trí (tự lưu, không vượt màn hình)",
 	},
@@ -170,9 +171,9 @@ local Lang = {
 		AutoSaveTitle="Auto-save settings", AutoSaveDesc="Saves after changes (requires executor file-write support)",
 		ServerHopTitle="Random public server hop", ServerHopDesc="Ask Roblox matchmaking to place you in a public session of this experience.", ServerHopButton="HOP SERVER", ServerHopCopy="COPY SERVER LIST LINK", ServerHopCooldown="Please wait before trying again.", ServerHopCopied="Server list link copied.", ServerHopCopyManual="Clipboard API unavailable; open the link manually.", 
         On="ON", Off="OFF", WaitingCharacter="Waiting for character...",
-        HotkeyTitle="Toggle UI Hotkey", HotkeyDesc="Click the button to set a hotkey. Default: None.", HotkeyNone="NONE", HotkeyWaiting="WAITING FOR KEY...", HotkeyClear="CLEAR KEY",
-        HiddenLegoTitle="Hidden Lego", HiddenLegoDesc="Hide the logo on the floating button; keep only the colored circle to open the menu.",
-        StartHiddenTitle="Start hidden", StartHiddenDesc="Hide the menu when the script starts or after a server change; keep the Lego button visible to reopen it.",
+        HotkeyTitle="Toggle UI Hotkey", HotkeyDesc="Use the selected key to hide/show the menu and the entire floating button (logo + red circle).", HotkeyNone="NONE", HotkeyWaiting="WAITING FOR KEY...", HotkeyClear="CLEAR KEY",
+        HiddenLegoTitle="Hide Lego logo (keep red circle)", HiddenLegoDesc="Hide only the Lego logo in the center; keep the red circular button visible to open/close the menu.",
+        StartHiddenTitle="Start hidden", StartHiddenDesc="Hide the menu at startup or after a server change; the floating button appears only when its hide option is OFF.",
         FloatSeeThroughTitle="See-through float button", FloatSeeThroughDesc="Soft circular translucent button; game text/notifications stay readable",
         FloatDragHint="Drag the float button to move it (auto-saved, stays on screen)",
 	}
@@ -347,8 +348,7 @@ local function MergeConfigTable(data)
 	end
 	local incomingVersion = tonumber(data.ConfigVersion) or 0
 	for k, v in pairs(data) do Config[k] = v end
-	-- Migrate V7.9.3 and earlier: StartHidden used to control the floating logo.
-	-- Preserve that preference as HiddenLego and leave the new startup option OFF.
+	-- Migrate older startup preference while keeping the floating red-circle button available.
 	if incomingVersion < 2 then
 		if data.HiddenLego == nil and data.StartHidden ~= nil then
 			Config.HiddenLego = data.StartHidden == true
@@ -2423,8 +2423,12 @@ end
 
 local function ApplyFloatSeeThrough(enable)
 	Config.FloatSeeThrough = enable == true
+	-- HiddenLego hides only the center logo; keep the red circular button available.
+	ToggleButton.Visible = true
+	ToggleButton.Active = true
+	ToggleButton.Selectable = true
 	if enable then
-		-- FloatSeeThrough chỉ đổi kiểu nền; HiddenLego quyết định có hiện logo hay chỉ hiện hình tròn.
+		-- FloatSeeThrough changes the button style; HiddenLego controls only the center logo.
 		ToggleButton.BackgroundColor3 = Color3.fromRGB(220, 25, 40)
 		ToggleButton.BackgroundTransparency = 0.35
 		FloatStroke.Color = Color3.fromRGB(255, 80, 90)
@@ -2442,7 +2446,7 @@ local function ApplyFloatSeeThrough(enable)
 			end
 		end
 	else
-		-- Kiểu nền đặc; logo vẫn tuân theo HiddenLego.
+		-- Solid background style; HiddenLego still hides only the center logo.
 		ToggleButton.BackgroundColor3 = HasCustomIcon and Color3.fromRGB(18, 4, 8) or Color3.fromRGB(120, 10, 20)
 		ToggleButton.BackgroundTransparency = HasCustomIcon and 0.15 or 0.05
 		FloatStroke.Color = Color3.fromRGB(220, 40, 55)
@@ -2496,7 +2500,7 @@ end
 
 RestoreFloatPosition()
 ApplyFloatSeeThrough(Config.FloatSeeThrough)
--- HiddenLego only hides the logo; the colored circle remains clickable.
+-- The red circular floating button remains visible; HiddenLego only hides its center logo.
 
 -- Kéo thả chuẩn: dùng Position.Offset (cùng hệ với IgnoreGuiInset) + GetMouseLocation
 -- để không bị lệch GuiInset (trước phải kéo tụt xuống mới đúng).
@@ -2743,6 +2747,7 @@ SaveBtn.Parent = BottomBar
 Instance.new("UICorner", SaveBtn).CornerRadius = UDim.new(0, 6)
 
 local allCards = {}
+local syncHotkey
 
 local function CreateToggleCard(id, titleKey, descKey, defaultState, callback)
 	local Card = Instance.new("Frame")
@@ -2911,8 +2916,8 @@ local function CreateHotkeyCard()
         end
 
         if Config.ToggleKey and input.KeyCode == Config.ToggleKey and not UserInputService:GetFocusedTextBox() then
-            -- Hotkey toggles the menu only; keep the colored circle visible as the reopen button.
-            SetMenuVisible(not isOpen, false)
+            -- Hotkey hides the menu AND the complete floating button. Press it again to restore both.
+            SetMenuVisible(not isOpen, true)
         end
     end)
 
@@ -3809,14 +3814,13 @@ local syncStartHidden = CreateToggleCard("StartHidden", "StartHiddenTitle", "Sta
 end)
 local syncHiddenLego = CreateToggleCard("HiddenLego", "HiddenLegoTitle", "HiddenLegoDesc", Config.HiddenLego, function(s)
     Config.HiddenLego = (s == true)
-    -- Only change the floating button appearance; do not open/close the menu.
     ApplyFloatSeeThrough(Config.FloatSeeThrough)
     QueueAutoSave()
 end)
 
 -- Keep Toggle UI Hotkey beside the other menu controls so it is visible immediately,
 -- without scrolling or searching. CardSearchText also indexes its title and key button.
-local syncHotkey = CreateHotkeyCard()
+syncHotkey = CreateHotkeyCard()
 
 local syncPlast = CreateToggleCard("FlatPlastic", "FlatPlastic", "FlatPlasticDesc", Config.FlatPlastic, function(s) SetFlatPlastic(s) end)
 local syncTex = CreateToggleCard("RemoveTextures", "RemoveTextures", "RemoveTexturesDesc", Config.RemoveTextures, function(s) SetRemoveTextures(s) end)
@@ -4293,29 +4297,20 @@ Connect(SearchBox:GetPropertyChangedSignal("Text"), function()
 	UpdateCanvas()
 end)
 
--- isOpen already forward-declared above
--- hideFloat=true  → ẩn cả menu + Lego (dùng cho hotkey; script vẫn chạy)
--- hideFloat=false → chỉ ẩn menu, giữ Lego (dùng cho nút - / click Lego)
+-- Keep the red circular button visible; HiddenLego only hides the center logo.
+-- hideFloat is used only by menu visibility behavior.
 SetMenuVisible = function(v, hideFloat)
 	isOpen = (v == true)
 	if ScreenGui then ScreenGui.Enabled = true end
 	if MainFrame then MainFrame.Visible = isOpen end
 	if ToggleGui then
 		pcall(function() ToggleGui.Parent = ParentTarget end)
-		if hideFloat and not isOpen then
-			-- Hotkey ẩn: giấu luôn nút Lego, nhưng KHÔNG destroy / KHÔNG Shutdown
-			ToggleGui.Enabled = true
-			if ToggleButton then
-				ToggleButton.Visible = false
-				ToggleButton.Active = false
-			end
-		else
-			-- Hiện lại hoặc minimize thường: Lego luôn sẵn
-			ToggleGui.Enabled = true
-			if ToggleButton then
-				ToggleButton.Visible = true
-				ToggleButton.Active = true
-			end
+		ToggleGui.Enabled = true
+		if ToggleButton then
+			local showFloatButton = not (hideFloat and not isOpen)
+			ToggleButton.Visible = showFloatButton
+			ToggleButton.Active = showFloatButton
+			ToggleButton.Selectable = showFloatButton
 		end
 	end
 end
@@ -4463,8 +4458,8 @@ SafeApplySaved("SkyMode", function() ApplySkyMode(Config.SkyMode) end)
 StoreConfigInMemory()
 QueueAutoSave()
 
--- Khi khởi động / vào server mới: StartHidden chỉ quyết định menu có tự ẩn hay không.
--- Nút Lego vẫn luôn hiện; HiddenLego quyết định hiện logo hay chỉ hiện hình tròn màu.
+-- Khi khởi động / vào server mới: StartHidden quyết định menu có tự ẩn hay không.
+-- HiddenLego chỉ ẩn logo ở giữa; nút tròn màu đỏ luôn được giữ lại.
 local function ApplyStartVisibility()
 	if Config.StartHidden then
 		pcall(function() SetMenuVisible(false, false) end)
