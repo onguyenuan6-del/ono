@@ -8,6 +8,7 @@
 --   V7.9.2: Add local Full Bright toggle with automatic re-scan and original-lighting restore.
 --   V7.9.5: Split Hidden Lego (circle-only float) from Start hidden (hide menu on startup/teleport).
 --   V7.9.5: Move both menu controls to the top of the list so they are immediately visible.
+--   Search/display fix: keep Graphics Quality and Toggle UI Hotkey visible near the top; search indexes button text.
 --   V7.9.7: Fix Graphics Quality applying Level 21 when Keep max view distance is enabled; add engine readback status.
 --   V7.9.6: Fog distance now also controls local Atmosphere Density/Haze and restores originals.
 --   V7.9.0: Responsive UI for 7680x4320 through 256x144; wrap long descriptions, fit menu to viewport, detect listed display profiles.
@@ -35,6 +36,7 @@ local VAMPIRE_SOURCE = [==[
 --   V7.9.6: Fog distance controls legacy Fog and Atmosphere Density/Haze locally.
 --   V7.9.5: Separate Hidden Lego (circle-only button) and Start hidden (menu starts closed).
 --   V7.9.5: Put both controls first in the settings list; no search is needed.
+--   Search/display fix: Toggle UI Hotkey is now registered near the top and remains searchable.
 --   V7.8.2: Hotkey hides menu+Lego; custom vampire icon; ToggleKey JSON fix.
 --   V7.8.1: Fixed Top Border rounded corner bug, changed floating icon to a Lego Brick.
 -- ====================================================================
@@ -2744,11 +2746,11 @@ local allCards = {}
 
 local function CreateToggleCard(id, titleKey, descKey, defaultState, callback)
 	local Card = Instance.new("Frame")
-	-- Pin the two menu controls above the normal feature list (UIList sorts by LayoutOrder).
+	-- Pin menu controls first; Graphics Quality uses LayoutOrder -1 just below them.
 	if id == "StartHidden" then
-		Card.LayoutOrder = -2
+		Card.LayoutOrder = -3
 	elseif id == "HiddenLego" then
-		Card.LayoutOrder = -1
+		Card.LayoutOrder = -2
 	end
 	Card.Name = id
 	Card.Size = UDim2.new(1, -8, 0, 66)
@@ -3272,7 +3274,9 @@ end
 
 local function CreateEngineQualityCard()
 	local Card = Instance.new("Frame")
-	Card.Name = "EngineQuality " .. T("EngineQualityTitle")
+	-- Keep Graphics Quality near the top so the scale selector is visible without searching.
+	Card.LayoutOrder = -1
+	Card.Name = "EngineQuality QualityScaleSelector 1-10 1-21 " .. T("EngineQualityTitle")
 	Card.Size = UDim2.new(1, -8, 0, 82)
 	Card.BackgroundColor3 = Color3.fromRGB(26, 10, 14)
 	Card.Parent = Scroll
@@ -3449,6 +3453,7 @@ local function CreateEngineQualityCard()
 
 	RegisterLangRefresh(function()
 		Label.Text = T("EngineQualityTitle")
+		Card.Name = "EngineQuality QualityScaleSelector 1-10 1-21 " .. T("EngineQualityTitle")
 		PaintScaleButtons()
 		Status.Text = EngineQualityStatusText
 	end)
@@ -3809,6 +3814,10 @@ local syncHiddenLego = CreateToggleCard("HiddenLego", "HiddenLegoTitle", "Hidden
     QueueAutoSave()
 end)
 
+-- Keep Toggle UI Hotkey beside the other menu controls so it is visible immediately,
+-- without scrolling or searching. CardSearchText also indexes its title and key button.
+local syncHotkey = CreateHotkeyCard()
+
 local syncPlast = CreateToggleCard("FlatPlastic", "FlatPlastic", "FlatPlasticDesc", Config.FlatPlastic, function(s) SetFlatPlastic(s) end)
 local syncTex = CreateToggleCard("RemoveTextures", "RemoveTextures", "RemoveTexturesDesc", Config.RemoveTextures, function(s) SetRemoveTextures(s) end)
 local syncShad = CreateToggleCard("RemoveShadows", "RemoveShadows", "RemoveShadowsDesc", Config.RemoveShadows, function(s) SetRemoveShadows(s) end)
@@ -3832,7 +3841,6 @@ local syncTeleportPersist = CreateToggleCard("TeleportPersist", "TeleportPersist
 	QueueAutoSave()
 end)
 
-local syncHotkey = CreateHotkeyCard()
 local syncFloatSeeThrough = CreateToggleCard("FloatSeeThrough", "FloatSeeThroughTitle", "FloatSeeThroughDesc", Config.FloatSeeThrough, function(s)
     ApplyFloatSeeThrough(s)
 end)
@@ -4267,9 +4275,13 @@ task.spawn(function()
 end)
 
 local function CardSearchText(card)
+	-- Include button/input text too: scale buttons (1-10 / 1-21) are TextButtons,
+	-- so the old TextLabel-only search could not find the selector by its own labels.
 	local parts = { card.Name }
 	for _, d in ipairs(card:GetDescendants()) do
-		if d:IsA("TextLabel") then table.insert(parts, d.Text) end
+		if d:IsA("TextLabel") or d:IsA("TextButton") or d:IsA("TextBox") then
+			table.insert(parts, d.Text)
+		end
 	end
 	return string.lower(table.concat(parts, " "))
 end
