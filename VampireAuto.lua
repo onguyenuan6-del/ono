@@ -1,5 +1,5 @@
 -- ====================================================================
---   VAMPIRE OPTIMIZER V7.9.6 - FOG + ATMOSPHERE + HIDDEN LEGO
+--   VAMPIRE OPTIMIZER V7.9.13 - FOG + ATMOSPHERE + HIDDEN LEGO
 --   Paste this ONE file into the executor. Nothing else is needed (no URL, no outside app, no manual file):
 --     * it saves its own copy to workspace/VampireOptimizer/main.lua
 --     * when ANY teleport starts (lobby -> match, rejoin, server hop) it queues a small stub, like Cat Vape,
@@ -8,6 +8,7 @@
 --   V7.9.2: Add local Full Bright toggle with automatic re-scan and original-lighting restore.
 --   V7.9.5: Split Hidden Lego (circle-only float) from Start hidden (hide menu on startup/teleport).
 --   V7.9.5: Move both menu controls to the top of the list so they are immediately visible.
+--   V7.9.7: Fix Graphics Quality applying Level 21 when Keep max view distance is enabled; add engine readback status.
 --   V7.9.6: Fog distance now also controls local Atmosphere Density/Haze and restores originals.
 --   V7.9.0: Responsive UI for 7680x4320 through 256x144; wrap long descriptions, fit menu to viewport, detect listed display profiles.
 --   V7.8.9: Add viewport resolution detection and adaptive low graphics quality (144p is a reference floor; no true render downscale API).
@@ -26,7 +27,11 @@
 
 local VAMPIRE_SOURCE = [==[
 -- ====================================================================
---   VAMPIRE OPTIMIZER V7.9.6
+--   VAMPIRE OPTIMIZER V7.9.13
+--   V7.9.13: Graphics Quality has a scale selector: 1-21 (engine levels, default) or 1-10 (Roblox scale, mapped to Level01-Level21).
+--   V7.9.12: Graphics Quality slider used Roblox's own 1-10 scale only.
+--   V7.9.11: Removed the "Keep max view distance" feature (and its FRM FFlag code).
+--   V7.9.7: Graphics Quality now always applies the selected Level 1-21; KeepFarView no longer forces Level 21.
 --   V7.9.6: Fog distance controls legacy Fog and Atmosphere Density/Haze locally.
 --   V7.9.5: Separate Hidden Lego (circle-only button) and Start hidden (menu starts closed).
 --   V7.9.5: Put both controls first in the settings list; no search is needed.
@@ -110,7 +115,7 @@ end
 
 local Lang = {
 	vi = {
-		Title="VAMPIRE OPTIMIZER V7.9.6", Search="Tìm kiếm tính năng...", Restore="Khôi phục đồ họa gốc", Save="Lưu cấu hình",
+		Title="VAMPIRE OPTIMIZER V7.9.13", Search="Tìm kiếm tính năng...", Restore="Khôi phục đồ họa gốc", Save="Lưu cấu hình",
 		FlatPlastic="Làm phẳng vật liệu (Nhựa)", FlatPlasticDesc="Đổi bề mặt sang nhựa; bỏ qua khối Lucky",
 		RemoveTextures="Ẩn Texture và Decal", RemoveTexturesDesc="Ẩn texture và decal trên bề mặt",
 		RemoveShadows="Tắt bóng đổ", RemoveShadowsDesc="Tắt bóng của vật thể để giảm tải đồ họa",
@@ -118,7 +123,7 @@ local Lang = {
 		FxScaleTitle="Giảm hiệu ứng (0% - 100%)", FxScaleDesc="0% = tắt; 50% = giảm một nửa; 100% = mặc định",
 		RenderDistTitle="Fog / Atmosphere Distance", RenderDistDesc="200 = sương dày; 100000 = giảm sương. Không tăng tải map.",
         FogAtmosphereStatus="Đã phát hiện Atmosphere: %d | đang chỉnh Density/Haze", FogLegacyStatus="Không phát hiện Atmosphere | đang chỉnh Fog truyền thống",
-		EngineQualityTitle="Chất lượng đồ họa (Level 1 - 21)", EngineQualityDesc="Level 1 nhẹ nhất; tầm nhìn vẫn tối đa nếu bật Giữ tầm nhìn",
+		EngineQualityTitle="Chất lượng đồ họa", EngineQualityDesc="Level engine 1 - 21; 1 nhẹ nhất.", EngineQualityDesc10="Thang Roblox 1 - 10 (quy đổi Level01 - 21).",
 		ResolutionTitle="Tự nhận diện độ phân giải / tối ưu đồ họa", ResolutionDesc="Nhận diện độ phân giải và tự co giãn giao diện từ 256×144 đến 7680×4320. Chỉ giảm Graphics Level, không ép độ phân giải render thật.", ResolutionStatus="Viewport: %dx%d | Màn hình: %s",
 		LiteTerrain="Tối ưu địa hình", LiteTerrainDesc="Giảm sóng nước, phản xạ và cỏ trang trí",
 		SkyTitle="Tùy chọn bầu trời", SkyDesc="Chuyển giữa bầu trời Galaxy và bầu trời gốc",
@@ -129,7 +134,6 @@ local Lang = {
 		HairFlatTitle="Tóc nhựa một màu (tự bật)", HairFlatDesc="Biến tóc người chơi thành nhựa SmoothPlastic một màu. Chỉ thấy trên máy bạn.",
 		StripClothingTitle="Xóa toàn bộ quần áo", StripClothingDesc="Gỡ classic + layered: áo, T-Shirt, áo khoác, quần, váy, giày... Chỉ thấy trên máy bạn.",
         HairColorTitle="Tóc một màu theo màu gốc", HairColorDesc="Đọc màu trung bình từ texture tóc gốc. Không đọc được màu thì tóc giữ texture.", HairRescan="QUÉT LẠI TÓC", HairRescanDone="Đã quét lại tóc.", HairRescanEnable="Hãy bật Tóc nhựa trước.", HairSolidOn="MỘT MÀU: BẬT", HairSolidOff="MỘT MÀU: TẮT", HairStats="Một màu: %s | Chỉ làm phẳng: %s | Đang xử lý: %s", 
-        FarViewTitle="Giữ tầm nhìn tối đa (như FFlag)", FarViewDesc="Đồ họa theo Level đã chọn, tầm nhìn vẫn như Level 21 (cần setfflag)", 
         TeleportPersistTitle="Tự chạy lại sau khi chuyển server", TeleportPersistDesc="Tự lưu bản sao vào workspace, tự chạy lại sau MỌI lần teleport",
 		AutoSaveTitle="Tự động lưu tùy chọn", AutoSaveDesc="Tự lưu sau khi thay đổi (cần executor hỗ trợ ghi file)",
 		ServerHopTitle="Đổi server công khai ngẫu nhiên", ServerHopDesc="Gửi yêu cầu Roblox matchmaking vào một phiên công khai của game hiện tại.", ServerHopButton="ĐỔI SERVER", ServerHopCopy="SAO CHÉP LINK SERVER", ServerHopCooldown="Vui lòng đợi trước khi thử lại.", ServerHopCopied="Đã sao chép link server.", ServerHopCopyManual="Không có clipboard API; mở link thủ công.", 
@@ -141,7 +145,7 @@ local Lang = {
         FloatDragHint="Kéo nút nổi để đổi vị trí (tự lưu, không vượt màn hình)",
 	},
 	en = {
-		Title="VAMPIRE OPTIMIZER V7.9.6", Search="Search features...", Restore="Restore original graphics", Save="Save settings",
+		Title="VAMPIRE OPTIMIZER V7.9.13", Search="Search features...", Restore="Restore original graphics", Save="Save settings",
 		FlatPlastic="Flat materials (Plastic)", FlatPlasticDesc="Convert surfaces to plastic; skips Lucky blocks",
 		RemoveTextures="Hide textures and decals", RemoveTexturesDesc="Hide surface textures and decals",
 		RemoveShadows="Disable shadows", RemoveShadowsDesc="Disable object shadows to reduce graphics load",
@@ -149,7 +153,7 @@ local Lang = {
 		FxScaleTitle="Effect reduction (0% - 100%)", FxScaleDesc="0% = off; 50% = half; 100% = default",
 		RenderDistTitle="Fog / Atmosphere distance", RenderDistDesc="200 = heavy fog; 100000 = clearer. Does not increase map loading.",
         FogAtmosphereStatus="Atmosphere detected: %d | controlling Density/Haze", FogLegacyStatus="No Atmosphere detected | controlling legacy Fog",
-		EngineQualityTitle="Graphics quality (Level 1 - 21)", EngineQualityDesc="Level 1 is lightest; view stays max if Keep view distance is on",
+		EngineQualityTitle="Graphics quality", EngineQualityDesc="Engine levels 1 - 21; 1 is lightest.", EngineQualityDesc10="Roblox scale 1 - 10 (mapped to Level01 - 21).",
 		ResolutionTitle="Auto-detect resolution / optimize graphics", ResolutionDesc="Detects the viewport and scales the UI from 256×144 up to 7680×4320. Lowers Graphics Level only; it does not force render resolution.", ResolutionStatus="Viewport: %dx%d | Display: %s",
 		LiteTerrain="Lite terrain", LiteTerrainDesc="Reduces water waves, reflections, and decorative grass",
 		SkyTitle="Sky options", SkyDesc="Switch between Galaxy sky and the game's original sky",
@@ -160,7 +164,6 @@ local Lang = {
 		HairFlatTitle="Solid plastic hair (auto enabled)", HairFlatDesc="Turns every visible player’s hair into one solid SmoothPlastic colour. Local only.",
 		StripClothingTitle="Remove all clothing", StripClothingDesc="Strips classic + layered: shirts, T-shirts, jackets, pants, skirts, shoes... Local only.",
         HairColorTitle="Solid hair, original colour", HairColorDesc="Averages the colour of the original hair texture. If unknown, keeps texture.", HairRescan="RESCAN HAIR", HairRescanDone="Rescanned hair.", HairRescanEnable="Turn on Plastic hair first.", HairSolidOn="SOLID: ON", HairSolidOff="SOLID: OFF", HairStats="Solid: %s | Flattened only: %s | Working: %s", 
-        FarViewTitle="Keep max view distance (FFlag)", FarViewDesc="Visuals follow the chosen level, view stays at Level 21 (needs setfflag)", 
         TeleportPersistTitle="Re-run after server change", TeleportPersistDesc="Saves itself to workspace, re-runs after EVERY teleport",
 		AutoSaveTitle="Auto-save settings", AutoSaveDesc="Saves after changes (requires executor file-write support)",
 		ServerHopTitle="Random public server hop", ServerHopDesc="Ask Roblox matchmaking to place you in a public session of this experience.", ServerHopButton="HOP SERVER", ServerHopCopy="COPY SERVER LIST LINK", ServerHopCooldown="Please wait before trying again.", ServerHopCopied="Server list link copied.", ServerHopCopyManual="Clipboard API unavailable; open the link manually.", 
@@ -298,6 +301,7 @@ local Config = {
 	FxScale = 100,
 	RenderDistance = 100000,
 	EngineQuality = 1,
+	QualityMode = 21,
 	AutoResolutionQuality = true,
 	LiteTerrain = false,
 	SkyMode = "Default",
@@ -307,7 +311,6 @@ local Config = {
 	HairSolid = true,
 	StripClothing = false,
 	TeleportPersist = true,
-	KeepFarView = true,
 	AutoSave = true,
 	ReloadUrl = "",
     HiddenLego = false,  -- Ẩn logo, chỉ giữ nút tròn màu
@@ -319,8 +322,27 @@ local Config = {
     FloatPosY = nil,     -- Vị trí Y đã lưu (pixel từ mép trên)
 }
 
+-- V7.9.13: the Graphics Quality slider uses Roblox's own 1-10 scale (same as the in-game Esc menu).
+-- Roblox maps those 10 steps onto its 21 engine levels (Enum.QualityLevel.Level01..Level21); this is the approximation used here.
+local QualityMap = {}
+function QualityMap.ToEngine(n)
+	n = math.clamp(math.floor(tonumber(n) or 1), 1, 10)
+	return math.clamp(math.floor(1 + (n - 1) * 20 / 9 + 0.5), 1, 21)
+end
+function QualityMap.ToClassic(engineLevel)
+	local e = math.clamp(math.floor(tonumber(engineLevel) or 1), 1, 21)
+	return math.clamp(math.floor(1 + (e - 1) * 9 / 20 + 0.5), 1, 10)
+end
+
 local function MergeConfigTable(data)
 	if type(data) ~= "table" then return end
+	-- V7.9.12 stored EngineQuality on a 1-10 scale (marked QualityScale = 10). Convert it back to engine levels (1-21)
+	-- and keep that user on the 1-10 slider view.
+	if tonumber(data.QualityScale) == 10 then
+		if tonumber(data.EngineQuality) then data.EngineQuality = QualityMap.ToEngine(data.EngineQuality) end
+		if data.QualityMode == nil then data.QualityMode = 10 end
+		data.QualityScale = nil
+	end
 	local incomingVersion = tonumber(data.ConfigVersion) or 0
 	for k, v in pairs(data) do Config[k] = v end
 	-- Migrate V7.9.3 and earlier: StartHidden used to control the floating logo.
@@ -405,6 +427,8 @@ if tostring(Config.EngineQuality):upper() == "AUTO" then
 else
 	Config.EngineQuality = math.clamp(math.floor(tonumber(Config.EngineQuality) or 1), 1, 21)
 end
+Config.QualityMode = (tonumber(Config.QualityMode) == 10) and 10 or 21
+Config.QualityScale = nil
 Config.AutoResolutionQuality = Config.AutoResolutionQuality ~= false
 Config.FlatPlastic = Config.FlatPlastic == true
 Config.RemoveTextures = Config.RemoveTextures == true
@@ -417,7 +441,6 @@ Config.FlatHair = true
 Config.HairSolid = Config.HairSolid ~= false
 Config.StripClothing = Config.StripClothing == true
 Config.TeleportPersist = Config.TeleportPersist ~= false
-Config.KeepFarView = Config.KeepFarView ~= false
 Config.ReloadUrl = (type(Config.ReloadUrl) == "string") and Config.ReloadUrl or ""
 if Config.AutoSave == nil then Config.AutoSave = true else Config.AutoSave = Config.AutoSave == true end
 Config.SkyMode = (Config.SkyMode == "Galaxy") and "Galaxy" or "Default"
@@ -928,71 +951,27 @@ local function SetFullBright(enable)
 	QueueAutoSave()
 end
 
-local FrmFlag = { Name = "DFIntDebugFRMQualityLevelOverride", Original = nil, Applied = false, Current = nil, Warned = false }
-function FrmFlag.Setter()
-	local fn
-	pcall(function() if type(setfflag) == "function" then fn = setfflag end end)
-	if not fn then pcall(function() if type(set_fflag) == "function" then fn = set_fflag end end) end
-	if not fn then pcall(function() if type(syn) == "table" and type(syn.setfflag) == "function" then fn = syn.setfflag end end) end
-	if not fn then
-		pcall(function()
-			if type(getgenv) == "function" then
-				local env = getgenv()
-				if type(env) == "table" and type(env.setfflag) == "function" then fn = env.setfflag end
-			end
-		end)
+local EngineQualityStatusLabel = nil
+local EngineQualityStatusText = "Waiting for quality selection"
+local function UpdateEngineQualityStatus(message, applied)
+	EngineQualityStatusText = tostring(message or "")
+	if EngineQualityStatusLabel then
+		EngineQualityStatusLabel.Text = EngineQualityStatusText
+		EngineQualityStatusLabel.TextColor3 = applied and Color3.fromRGB(120, 220, 145) or Color3.fromRGB(235, 175, 105)
 	end
-	return fn
-end
-function FrmFlag.Getter()
-	local fn
-	pcall(function() if type(getfflag) == "function" then fn = getfflag end end)
-	if not fn then pcall(function() if type(get_fflag) == "function" then fn = get_fflag end end) end
-	if not fn then pcall(function() if type(syn) == "table" and type(syn.getfflag) == "function" then fn = syn.getfflag end end) end
-	return fn
-end
-function FrmFlag.Read()
-	local getter = FrmFlag.Getter()
-	if not getter then return nil end
-	local ok, value = pcall(getter, FrmFlag.Name)
-	if ok and value ~= nil and tostring(value) ~= "" then return tostring(value) end
-	return nil
-end
-function FrmFlag.Set(level)
-	if FrmFlag.Applied and FrmFlag.Current == level then return true end
-	local setter = FrmFlag.Setter()
-	if not setter then return false, "executor has no setfflag" end
-	if FrmFlag.Original == nil then
-		pcall(function() FrmFlag.Original = PersistentEnv.VampireOptimizerFrmOriginal end)
-		if FrmFlag.Original == nil then
-			FrmFlag.Original = FrmFlag.Read() or "0"
-			pcall(function() PersistentEnv.VampireOptimizerFrmOriginal = FrmFlag.Original end)
-		end
-	end
-	local ok, err = pcall(setter, FrmFlag.Name, tostring(level))
-	if not ok then return false, tostring(err) end
-	local now = FrmFlag.Read()
-	if now ~= nil and now ~= tostring(level) then return false, "executor ignored the value" end
-	FrmFlag.Applied = true
-	FrmFlag.Current = level
-	return true
-end
-function FrmFlag.Restore()
-	if not FrmFlag.Applied then return end
-	local original = FrmFlag.Original or "0"
-	FrmFlag.Applied = false
-	FrmFlag.Current = nil
-	FrmFlag.Original = nil
-	local setter = FrmFlag.Setter()
-	if setter then pcall(setter, FrmFlag.Name, tostring(original)) end
-	pcall(function() PersistentEnv.VampireOptimizerFrmOriginal = nil end)
 end
 
 local function SetEngineQualityLevel(lvl, preserveConfigured)
 	if tostring(lvl):upper() == "AUTO" then
 		if preserveConfigured ~= false then Config.EngineQuality = "AUTO" end
-		FrmFlag.Restore()
-		pcall(function() settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic end)
+		local autoOk, autoErr = pcall(function()
+			settings().Rendering.QualityLevel = Enum.QualityLevel.Automatic
+		end)
+		if autoOk then
+			UpdateEngineQualityStatus("Requested: Automatic quality", true)
+		else
+			UpdateEngineQualityStatus("Could not enable Automatic: " .. tostring(autoErr), false)
+		end
 		Lighting.EnvironmentDiffuseScale = Backup.Lighting.EnvironmentDiffuseScale
 		Lighting.EnvironmentSpecularScale = Backup.Lighting.EnvironmentSpecularScale
 		QueueAutoSave()
@@ -1000,22 +979,39 @@ local function SetEngineQualityLevel(lvl, preserveConfigured)
 	end
 	lvl = math.clamp(math.floor(tonumber(lvl) or 1), 1, 21)
 	if preserveConfigured ~= false then Config.EngineQuality = lvl end
-	local farView = false
-	if Config.KeepFarView ~= false and lvl < 21 then
-		local applied, why = FrmFlag.Set(lvl)
-		farView = applied == true
-		if not farView and not FrmFlag.Warned then
-			FrmFlag.Warned = true
-			warn("[Vampire Optimizer] " .. FrmFlag.Name .. " not applied (" .. tostring(why) .. "): view distance follows the chosen level")
-		end
-	else
-		FrmFlag.Restore()
+
+	local engineLevel = lvl
+	local qualityName = string.format("Level%02d", engineLevel)
+	local shownName = qualityName
+	if Config.QualityMode == 10 then
+		shownName = string.format("Graphics %d/10 (%s)", QualityMap.ToClassic(engineLevel), qualityName)
 	end
-	pcall(function()
-		local engineLevel = farView and 21 or lvl
-		settings().Rendering.QualityLevel = Enum.QualityLevel[string.format("Level%02d", engineLevel)]
+	local qualityEnum = Enum.QualityLevel[qualityName]
+	local setOk, setErr = false, "quality enum unavailable"
+	if qualityEnum then
+		setOk, setErr = pcall(function()
+			settings().Rendering.QualityLevel = qualityEnum
+		end)
+	end
+
+	local readOk, currentQuality = pcall(function()
+		return settings().Rendering.QualityLevel
 	end)
-	if lvl <= 5 then
+	local currentName = "unavailable"
+	if readOk and currentQuality ~= nil then
+		pcall(function() currentName = currentQuality.Name end)
+		if currentName == "unavailable" then currentName = tostring(currentQuality) end
+	end
+
+	if setOk and readOk and currentName == qualityName then
+		UpdateEngineQualityStatus("Applied to Roblox: " .. shownName, true)
+	elseif setOk then
+		UpdateEngineQualityStatus("Requested " .. shownName .. " | Roblox reports: " .. tostring(currentName), false)
+	else
+		UpdateEngineQualityStatus("Failed to apply " .. shownName .. ": " .. tostring(setErr), false)
+	end
+
+	if engineLevel <= 5 then
 		Lighting.EnvironmentDiffuseScale = 0
 		Lighting.EnvironmentSpecularScale = 0
 	else
@@ -2269,7 +2265,6 @@ local function RestoreAllGraphics()
 	SetLiteTerrain(false)
 	ApplySkyMode("Default")
 	AtmosphereControl.Restore()
-	FrmFlag.Restore()
 	pcall(function() settings().Rendering.QualityLevel = Backup.InitialEngineQuality end)
 	Lighting.GlobalShadows = Backup.Lighting.GlobalShadows
 	Lighting.FogStart = Backup.Lighting.FogStart
@@ -3278,7 +3273,7 @@ end
 local function CreateEngineQualityCard()
 	local Card = Instance.new("Frame")
 	Card.Name = "EngineQuality " .. T("EngineQualityTitle")
-	Card.Size = UDim2.new(1, -8, 0, 75)
+	Card.Size = UDim2.new(1, -8, 0, 82)
 	Card.BackgroundColor3 = Color3.fromRGB(26, 10, 14)
 	Card.Parent = Scroll
 	Instance.new("UICorner", Card).CornerRadius = UDim.new(0, 6)
@@ -3295,7 +3290,7 @@ local function CreateEngineQualityCard()
 	Label.Parent = Card
 
 	local Sub = Instance.new("TextLabel")
-	Sub.Size = UDim2.new(1, -70, 0, 16)
+	Sub.Size = UDim2.new(1, -125, 0, 16)
 	Sub.Position = UDim2.new(0, 10, 0, 24)
 	Sub.BackgroundTransparency = 1
 	Sub.Text = T("EngineQualityDesc")
@@ -3303,13 +3298,31 @@ local function CreateEngineQualityCard()
 	Sub.Font = Enum.Font.Gotham
 	Sub.TextSize = 11
 	Sub.TextXAlignment = Enum.TextXAlignment.Left
+	Sub.TextTruncate = Enum.TextTruncate.AtEnd
 	Sub.Parent = Card
+
+	-- Slider view: Config.QualityMode 21 = engine levels 1-21, 10 = Roblox's own 1-10 scale (mapped onto the engine levels).
+	-- Config.EngineQuality always stores the ENGINE level (1-21).
+	local function ScaleMax() return (Config.QualityMode == 10) and 10 or 21 end
+	local function ToDisplay(engineLevel)
+		if Config.QualityMode == 10 then return QualityMap.ToClassic(engineLevel) end
+		return math.clamp(math.floor(tonumber(engineLevel) or 1), 1, 21)
+	end
+	local function FromDisplay(v)
+		v = math.clamp(math.floor(tonumber(v) or 1), 1, ScaleMax())
+		if Config.QualityMode == 10 then return QualityMap.ToEngine(v) end
+		return v
+	end
+	local function DisplayText()
+		if tostring(Config.EngineQuality):upper() == "AUTO" then return "AUTO" end
+		return tostring(ToDisplay(Config.EngineQuality or 1))
+	end
 
 	local ValInput = Instance.new("TextBox")
 	ValInput.Size = UDim2.new(0, 48, 0, 22)
 	ValInput.Position = UDim2.new(1, -58, 0, 6)
 	ValInput.BackgroundColor3 = Color3.fromRGB(40, 15, 20)
-	ValInput.Text = tostring(Config.EngineQuality or 1)
+	ValInput.Text = DisplayText()
 	ValInput.TextColor3 = Color3.fromRGB(255, 255, 255)
 	ValInput.Font = Enum.Font.GothamBold
 	ValInput.TextSize = 11
@@ -3327,12 +3340,69 @@ local function CreateEngineQualityCard()
 
 	local Fill = Instance.new("Frame")
 	local qualityValue = tonumber(Config.EngineQuality) or 1
-	local frac = (qualityValue - 1) / 20
+	local frac = (ToDisplay(qualityValue) - 1) / (ScaleMax() - 1)
 	Fill.Size = UDim2.new(math.clamp(frac, 0, 1), 0, 1, 0)
 	Fill.BackgroundColor3 = Color3.fromRGB(215, 30, 50)
 	Fill.BorderSizePixel = 0
 	Fill.Parent = SliderBar
 	Instance.new("UICorner", Fill).CornerRadius = UDim.new(1, 0)
+
+	local Status = Instance.new("TextLabel")
+	Status.Size = UDim2.new(1, -20, 0, 13)
+	Status.Position = UDim2.new(0, 10, 0, 64)
+	Status.BackgroundTransparency = 1
+	Status.Text = EngineQualityStatusText
+	Status.TextColor3 = Color3.fromRGB(235, 175, 105)
+	Status.Font = Enum.Font.GothamSemibold
+	Status.TextSize = 9
+	Status.TextXAlignment = Enum.TextXAlignment.Left
+	Status.TextTruncate = Enum.TextTruncate.AtEnd
+	Status.Parent = Card
+	EngineQualityStatusLabel = Status
+
+	local function MakeScaleButton(text, xOffset, width)
+		local b = Instance.new("TextButton")
+		b.Size = UDim2.new(0, width, 0, 16)
+		b.Position = UDim2.new(1, xOffset, 0, 29)
+		b.BackgroundColor3 = Color3.fromRGB(50, 20, 25)
+		b.Text = text
+		b.TextColor3 = Color3.fromRGB(255, 255, 255)
+		b.Font = Enum.Font.GothamBold
+		b.TextSize = 10
+		b.AutoButtonColor = false
+		b.Parent = Card
+		Instance.new("UICorner", b).CornerRadius = UDim.new(0, 4)
+		return b
+	end
+	local Btn10 = MakeScaleButton("1-10", -108, 46)
+	local Btn21 = MakeScaleButton("1-21", -58, 48)
+
+	local function PaintScaleButtons()
+		local is10 = Config.QualityMode == 10
+		Btn10.BackgroundColor3 = is10 and Color3.fromRGB(200, 25, 45) or Color3.fromRGB(50, 20, 25)
+		Btn21.BackgroundColor3 = is10 and Color3.fromRGB(50, 20, 25) or Color3.fromRGB(200, 25, 45)
+		Sub.Text = is10 and T("EngineQualityDesc10") or T("EngineQualityDesc")
+	end
+	local function RefreshDisplay()
+		ValInput.Text = DisplayText()
+		local v = tonumber(Config.EngineQuality)
+		local f = v and ((ToDisplay(v) - 1) / (ScaleMax() - 1)) or 0
+		Fill.Size = UDim2.new(math.clamp(f, 0, 1), 0, 1, 0)
+	end
+	local function SetScaleMode(mode)
+		if Config.QualityMode == mode then return end
+		Config.QualityMode = mode
+		if mode == 10 and tonumber(Config.EngineQuality) then
+			-- snap to the nearest Roblox 1-10 step so the number shown matches the engine level that is applied
+			SetEngineQualityLevel(QualityMap.ToEngine(QualityMap.ToClassic(Config.EngineQuality)))
+		end
+		RefreshDisplay()
+		PaintScaleButtons()
+		QueueAutoSave()
+	end
+	PaintScaleButtons()
+	Connect(Btn10.MouseButton1Down, function() SetScaleMode(10) end)
+	Connect(Btn21.MouseButton1Down, function() SetScaleMode(21) end)
 
 	local isDragging = false
 	local function UpdateQ(x)
@@ -3340,10 +3410,11 @@ local function CreateEngineQualityCard()
 		if barWidth <= 0 then return end
 		local pos = math.clamp(x - SliderBar.AbsolutePosition.X, 0, barWidth)
 		local fraction = math.clamp(pos / barWidth, 0, 1)
-		local val = math.clamp(math.round(1 + fraction * 20), 1, 21)
-		Fill.Size = UDim2.new((val - 1) / 20, 0, 1, 0)
+		local maxV = ScaleMax()
+		local val = math.clamp(math.round(1 + fraction * (maxV - 1)), 1, maxV)
+		Fill.Size = UDim2.new((val - 1) / (maxV - 1), 0, 1, 0)
 		ValInput.Text = tostring(val)
-		SetEngineQualityLevel(val)
+		SetEngineQualityLevel(FromDisplay(val))
 	end
 
 	Connect(SliderBar.InputBegan, function(input)
@@ -3370,15 +3441,16 @@ local function CreateEngineQualityCard()
 			SetEngineQualityLevel("AUTO")
 			return
 		end
-		local num = math.clamp(math.floor(tonumber(ValInput.Text) or 1), 1, 21)
+		local num = math.clamp(math.floor(tonumber(ValInput.Text) or 1), 1, ScaleMax())
 		ValInput.Text = tostring(num)
-		Fill.Size = UDim2.new((num - 1) / 20, 0, 1, 0)
-		SetEngineQualityLevel(num)
+		Fill.Size = UDim2.new((num - 1) / (ScaleMax() - 1), 0, 1, 0)
+		SetEngineQualityLevel(FromDisplay(num))
 	end)
 
 	RegisterLangRefresh(function()
 		Label.Text = T("EngineQualityTitle")
-		Sub.Text = T("EngineQualityDesc")
+		PaintScaleButtons()
+		Status.Text = EngineQualityStatusText
 	end)
 	table.insert(allCards, Card)
 	return function(newVal, shouldApply)
@@ -3389,8 +3461,8 @@ local function CreateEngineQualityCard()
 			return
 		end
 		newVal = math.clamp(math.floor(tonumber(newVal) or 1), 1, 21)
-		ValInput.Text = tostring(newVal)
-		Fill.Size = UDim2.new((newVal - 1) / 20, 0, 1, 0)
+		ValInput.Text = tostring(ToDisplay(newVal))
+		Fill.Size = UDim2.new((ToDisplay(newVal) - 1) / (ScaleMax() - 1), 0, 1, 0)
 		if shouldApply ~= false then SetEngineQualityLevel(newVal) end
 	end
 end
@@ -3745,10 +3817,6 @@ local syncFx = CreateFxSliderCard()
 local syncDist = CreateRenderDistanceCard()
 local syncEng = CreateEngineQualityCard()
 local syncResolution = CreateResolutionCard()
-local syncFarView = CreateToggleCard("KeepFarView", "FarViewTitle", "FarViewDesc", Config.KeepFarView, function(s)
-	Config.KeepFarView = s == true
-	SetEngineQualityLevel(Config.EngineQuality)
-end)
 local syncTerr = CreateToggleCard("LiteTerrain", "LiteTerrain", "LiteTerrainDesc", Config.LiteTerrain, function(s) SetLiteTerrain(s) end)
 local syncSky = CreateSkyCard()
 local syncArea = CreateAreaMonitorCard()
@@ -3926,7 +3994,7 @@ local function DescribeExecutor()
 	if Config.TeleportPersist ~= false then
 		if Persist.Install() then autoRun = "FILE" elseif Persist.Source() then autoRun = "EMBED" else autoRun = "NO" end
 	end
-	return string.format("%s | queue_on_teleport: %s | files: %s | http: %s | auto-run: %s | fflag: %s", name, yn(hasQueue), yn(hasFiles), yn(hasHttp), autoRun, yn(FrmFlag.Setter() ~= nil))
+	return string.format("%s | queue_on_teleport: %s | files: %s | http: %s | auto-run: %s", name, yn(hasQueue), yn(hasFiles), yn(hasHttp), autoRun)
 end
 local ExecutorReport = DescribeExecutor()
 
