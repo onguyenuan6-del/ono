@@ -71,7 +71,7 @@ end
 local Lang = {
 	vi = {
 		Title="VAMPIRE OPTIMIZER V7.9.13", Search="Tìm kiếm tính năng...", Restore="Khôi phục đồ họa gốc", Save="Lưu cấu hình",
-		FlatPlastic="Làm phẳng vật liệu (Nhựa)", FlatPlasticDesc="Đổi bề mặt sang nhựa; bỏ qua khối Lucky",
+		FlatPlastic="Làm phẳng vật liệu (Nhựa)", FlatPlasticDesc="Đổi bề mặt sang nhựa; bỏ qua khối Lucky và TNT",
 		RemoveTextures="Ẩn Texture và Decal", RemoveTexturesDesc="Ẩn texture và decal trên bề mặt",
 		RemoveShadows="Tắt bóng đổ", RemoveShadowsDesc="Tắt bóng của vật thể để giảm tải đồ họa",
 		FullBrightTitle="Full Bright (tăng độ sáng màn hình)", FullBrightDesc="Tự quét và giữ môi trường sáng trên máy bạn; tắt để khôi phục ánh sáng ban đầu",
@@ -101,7 +101,7 @@ local Lang = {
 	},
 	en = {
 		Title="VAMPIRE OPTIMIZER V7.9.13", Search="Search features...", Restore="Restore original graphics", Save="Save settings",
-		FlatPlastic="Flat materials (Plastic)", FlatPlasticDesc="Convert surfaces to plastic; skips Lucky blocks",
+		FlatPlastic="Flat materials (Plastic)", FlatPlasticDesc="Convert surfaces to plastic; skips Lucky and TNT blocks",
 		RemoveTextures="Hide textures and decals", RemoveTexturesDesc="Hide surface textures and decals",
 		RemoveShadows="Disable shadows", RemoveShadowsDesc="Disable object shadows to reduce graphics load",
 		FullBrightTitle="Full Bright (brighten your screen)", FullBrightDesc="Auto-scans and keeps your local scene bright; turn off to restore original lighting",
@@ -197,7 +197,6 @@ local Backup = {
 	InitialEngineQuality = Enum.QualityLevel.Automatic,
 	OriginalMaterials = {},
 	OriginalMaterialVariants = {},
-	OriginalTile = {},
 	OriginalTextures = {},
 	OriginalShadows = {},
 	OriginalFx = {},
@@ -420,7 +419,7 @@ end
 local function isLucky(obj)
 	local cur = obj
 	while cur and cur ~= workspace do
-		if string.find(string.lower(cur.Name), "lucky") then return true end
+		if string.find(string.lower(cur.Name), "lucky", 1, true) then return true end
 		cur = cur.Parent
 	end
 	return false
@@ -542,100 +541,239 @@ do
 	end
 end
 
-local FlatPlasticRevision = 0
+Backup.FlatMaterial = {
+	Revision = 0,
+	RemoveTexturesRevision = 0,
+	VariantLookupCache = {},
+}
 
-local function ApplyFlatMaterialVariant(v)
-	if not v or not v:IsA("MaterialVariant") or isLucky(v) then return end
-	if Backup.OriginalTile[v] == nil then Backup.OriginalTile[v] = v.StudsPerTile end
-	pcall(function() v.StudsPerTile = 100000 end)
-end
+do
+	local FlatMaterial = Backup.FlatMaterial
+	local CollectionService = game:GetService("CollectionService")
+	-- Thêm từ khóa viết thường vào đây nếu muốn giữ thêm khối, ví dụ: { "tnt", "bomb", "specialblock" }.
+	local KEEP_TEXTURE_KEYWORDS = { "tnt" }
+	local KEEP_TEXTURE_MARKER = "KeepTexture"
+	local FlatVariantByOriginal = setmetatable({}, { __mode = "k" })
+	local GeneratedFlatVariants = setmetatable({}, { __mode = "k" })
+	local MissingFlatVariantWarnings = {}
+	local FLAT_STUDS_PER_TILE = 100000
 
-local function ApplyFlatPlasticPart(v)
-	if not Config.FlatPlastic or not v or not v:IsA("BasePart") or not v.Parent then return end
-	if isLucky(v) or isInCharacter(v) or Held.IsHeld(v) then return end
-	local mv = ""
-	pcall(function() mv = v.MaterialVariant end)
-
-	if mv == nil or mv == "" then
-		if Backup.OriginalMaterials[v] == nil then Backup.OriginalMaterials[v] = v.Material end
-		if Backup.OriginalMaterialVariants[v] == nil then Backup.OriginalMaterialVariants[v] = mv end
-		pcall(function() v.Material = Enum.Material.SmoothPlastic end)
+	local function matchesKeepTextureKeyword(value)
+		if type(value) ~= "string" or value == "" then return false end
+		local lowered = string.lower(value)
+		for _, keyword in ipairs(KEEP_TEXTURE_KEYWORDS) do
+			if string.find(lowered, string.lower(keyword), 1, true) then return true end
+		end
+		return false
 	end
-end
 
-local function ApplyFlatPlasticPass(revision)
-	if not IsRunning or revision ~= FlatPlasticRevision or not Config.FlatPlastic then return end
-	local count = 0
-	for _, v in ipairs(MaterialService:GetDescendants()) do
-		if not IsRunning or revision ~= FlatPlasticRevision or not Config.FlatPlastic then return end
-		if v:IsA("MaterialVariant") then ApplyFlatMaterialVariant(v) end
-		count += 1
-		if count % 1000 == 0 then task.wait() end
+	-- Bỏ qua theo tên Part/Model, MaterialVariant, Attribute hoặc Tag.
+	function FlatMaterial.ShouldKeepTexture(part)
+		if not part or not part:IsA("BasePart") then return false end
+		local variantName = ""
+		pcall(function() variantName = part.MaterialVariant end)
+		if matchesKeepTextureKeyword(variantName) then return true end
+		local current = part
+		while current and current ~= workspace do
+			local marked = false
+			pcall(function()
+				marked = current:GetAttribute(KEEP_TEXTURE_MARKER) == true
+					or CollectionService:HasTag(current, KEEP_TEXTURE_MARKER)
+			end)
+			if marked or matchesKeepTextureKeyword(current.Name) then return true end
+			current = current.Parent
+		end
+		return false
 	end
-	count = 0
-	for _, v in ipairs(workspace:GetDescendants()) do
-		if not IsRunning or revision ~= FlatPlasticRevision or not Config.FlatPlastic then return end
-		if v:IsA("BasePart") then ApplyFlatPlasticPart(v) end
-		count += 1
-		if count % 1000 == 0 then task.wait() end
+
+	local function isGeneratedFlatVariant(variant)
+		if not variant then return false end
+		if GeneratedFlatVariants[variant] then return true end
+		local marked = false
+		pcall(function() marked = variant:GetAttribute("VampireOptimizerFlatVariant") == true end)
+		if marked then GeneratedFlatVariants[variant] = true end
+		return marked
+	end
+
+	local function findMaterialVariant(variantName, baseMaterial, wantFlat)
+		if type(variantName) ~= "string" or variantName == "" then return nil end
+		local key = (wantFlat and "flat|" or "original|") .. variantName .. "|" .. baseMaterial.Name
+		local cached = FlatMaterial.VariantLookupCache[key]
+		if cached and cached.Parent and cached.Name == variantName and cached.BaseMaterial == baseMaterial
+			and isGeneratedFlatVariant(cached) == wantFlat then
+			return cached
+		end
+		FlatMaterial.VariantLookupCache[key] = nil
+
+		for _, inst in ipairs(MaterialService:GetDescendants()) do
+			if inst:IsA("MaterialVariant") and inst.Name == variantName and inst.BaseMaterial == baseMaterial
+				and isGeneratedFlatVariant(inst) == wantFlat then
+				FlatMaterial.VariantLookupCache[key] = inst
+				return inst
+			end
+		end
+		return nil
+	end
+
+	local function getFlatVariant(original)
+		local existing = FlatVariantByOriginal[original]
+		if existing and existing.Parent then
+			pcall(function() existing.StudsPerTile = FLAT_STUDS_PER_TILE end)
+			return existing
+		end
+
+		local flatName = original.Name .. "_Flat"
+		local flat = findMaterialVariant(flatName, original.BaseMaterial, true)
+		if not flat then
+			flat = original:Clone()
+			flat.Name = flatName
+			pcall(function() flat.StudsPerTile = FLAT_STUDS_PER_TILE end)
+			pcall(function() flat:SetAttribute("VampireOptimizerFlatVariant", true) end)
+			GeneratedFlatVariants[flat] = true
+			flat.Parent = original.Parent
+		else
+			GeneratedFlatVariants[flat] = true
+			pcall(function() flat.StudsPerTile = FLAT_STUDS_PER_TILE end)
+		end
+
+		FlatVariantByOriginal[original] = flat
+		FlatMaterial.VariantLookupCache["flat|" .. flat.Name .. "|" .. flat.BaseMaterial.Name] = flat
+		return flat
+	end
+
+	local function findOriginalVariant(variantName, baseMaterial)
+		if variantName == "" then return nil end
+		return findMaterialVariant(variantName, baseMaterial, false)
+	end
+
+	function FlatMaterial.ApplyVariant(part)
+		local variantName = ""
+		pcall(function() variantName = part.MaterialVariant end)
+		if variantName == "" then return false end
+		-- Dùng Material gốc đã lưu, vì fallback SmoothPlastic có thể đã đổi part.Material.
+		local baseMaterial = Backup.OriginalMaterials[part] or part.Material
+		if findMaterialVariant(variantName, baseMaterial, true) then
+			return pcall(function() part.Material = baseMaterial end)
+		end
+
+		local original = findOriginalVariant(variantName, baseMaterial)
+		if not original then
+			local warningKey = variantName .. "|" .. part.Material.Name
+			if not MissingFlatVariantWarnings[warningKey] then
+				MissingFlatVariantWarnings[warningKey] = true
+				warn(("[Vampire Optimizer] Không tìm thấy MaterialVariant '%s' cho %s; dùng SmoothPlastic thay thế."):format(
+					variantName,
+					part:GetFullName()
+				))
+			end
+			return false
+		end
+
+		local flat = getFlatVariant(original)
+		return pcall(function()
+			part.Material = baseMaterial
+			part.MaterialVariant = flat.Name
+		end)
+	end
+
+	function FlatMaterial.ApplyPart(part)
+		if not Config.FlatPlastic or not part or not part:IsA("BasePart") or not part.Parent then return end
+		if isLucky(part) or FlatMaterial.ShouldKeepTexture(part) or isInCharacter(part) or Held.IsHeld(part) then return end
+		local originalVariant = ""
+		pcall(function() originalVariant = part.MaterialVariant end)
+		if Backup.OriginalMaterials[part] == nil then Backup.OriginalMaterials[part] = part.Material end
+		if Backup.OriginalMaterialVariants[part] == nil then Backup.OriginalMaterialVariants[part] = originalVariant end
+		if originalVariant ~= "" and FlatMaterial.ApplyVariant(part) then return end
+		-- Giữ tên variant gốc nếu hiện chưa tải; listener MaterialService sẽ thử lại khi variant xuất hiện.
+		pcall(function() part.Material = Enum.Material.SmoothPlastic end)
+	end
+
+	function FlatMaterial.ApplyPass(revision)
+		if not IsRunning or revision ~= FlatMaterial.Revision or not Config.FlatPlastic then return end
+		local count = 0
+		for _, part in ipairs(workspace:GetDescendants()) do
+			if not IsRunning or revision ~= FlatMaterial.Revision or not Config.FlatPlastic then return end
+			if part:IsA("BasePart") then FlatMaterial.ApplyPart(part) end
+			count += 1
+			if count % 1000 == 0 then task.wait() end
+		end
+	end
+
+	function FlatMaterial.IsGeneratedVariant(variant)
+		return isGeneratedFlatVariant(variant)
+	end
+
+	function FlatMaterial.HideTextureOrDecal(obj)
+		if not Config.RemoveTextures or not obj or not obj.Parent then return end
+		if not (obj:IsA("Texture") or obj:IsA("Decal")) then return end
+		if isLucky(obj) or Held.IsHeld(obj) then return end
+		local owner = obj.Parent
+		while owner and owner ~= workspace do
+			if owner:IsA("BasePart") and FlatMaterial.ShouldKeepTexture(owner) then return end
+			owner = owner.Parent
+		end
+		if Backup.OriginalTextures[obj] == nil then Backup.OriginalTextures[obj] = obj.Transparency end
+		pcall(function() obj.Transparency = 1 end)
 	end
 end
 
 local function SetFlatPlastic(enable)
 	Config.FlatPlastic = enable == true
-	FlatPlasticRevision += 1
-	local revision = FlatPlasticRevision
+	Backup.FlatMaterial.Revision += 1
+	local revision = Backup.FlatMaterial.Revision
 	task.spawn(function()
 		if Config.FlatPlastic then
-
-			for pass, delaySeconds in ipairs({ 0, 0.6, 1.5 }) do
+			for _, delaySeconds in ipairs({ 0, 0.6, 1.5 }) do
 				if delaySeconds > 0 then task.wait(delaySeconds) end
-				if not IsRunning or revision ~= FlatPlasticRevision or not Config.FlatPlastic then return end
-				ApplyFlatPlasticPass(revision)
+				if not IsRunning or revision ~= Backup.FlatMaterial.Revision or not Config.FlatPlastic then return end
+				Backup.FlatMaterial.ApplyPass(revision)
 			end
 		else
-
 			local count = 0
 			for part, mat in pairs(Backup.OriginalMaterials) do
-				if not IsRunning or revision ~= FlatPlasticRevision or Config.FlatPlastic then return end
-				if part and part.Parent then
+				if revision ~= Backup.FlatMaterial.Revision or Config.FlatPlastic then return end
+				if part then
 					pcall(function()
 						part.Material = mat
-						local mv = Backup.OriginalMaterialVariants[part]
-						if mv ~= nil then part.MaterialVariant = mv end
+						local variantName = Backup.OriginalMaterialVariants[part]
+						if variantName ~= nil then part.MaterialVariant = variantName end
 					end)
 				end
-				count += 1
-				if count % 1000 == 0 then task.wait() end
-			end
-			count = 0
-			for variant, tile in pairs(Backup.OriginalTile) do
-				if not IsRunning or revision ~= FlatPlasticRevision or Config.FlatPlastic then return end
-				if variant and variant.Parent then pcall(function() variant.StudsPerTile = tile end) end
+				Backup.OriginalMaterials[part] = nil
+				Backup.OriginalMaterialVariants[part] = nil
 				count += 1
 				if count % 1000 == 0 then task.wait() end
 			end
 		end
-		if revision == FlatPlasticRevision and Held.Refresh then Held.Refresh() end
+		if revision == Backup.FlatMaterial.Revision and Held.Refresh then Held.Refresh() end
 	end)
 	QueueAutoSave()
 end
 
 local function SetRemoveTextures(enable)
-	Config.RemoveTextures = enable
+	Config.RemoveTextures = enable == true
+	Backup.FlatMaterial.RemoveTexturesRevision += 1
+	local revision = Backup.FlatMaterial.RemoveTexturesRevision
 	task.spawn(function()
-		for _, v in ipairs(workspace:GetDescendants()) do
-			if (v:IsA("Texture") or v:IsA("Decal")) and not isLucky(v) and not Held.IsHeld(v) then
-				if enable then
-					if Backup.OriginalTextures[v] == nil then Backup.OriginalTextures[v] = v.Transparency end
-					v.Transparency = 1
-				else
-					local old = Backup.OriginalTextures[v]
-					if old ~= nil and v and v.Parent then v.Transparency = old end
+		if Config.RemoveTextures then
+			local count = 0
+			for _, obj in ipairs(workspace:GetDescendants()) do
+				if not IsRunning or revision ~= Backup.FlatMaterial.RemoveTexturesRevision or not Config.RemoveTextures then return end
+				Backup.FlatMaterial.HideTextureOrDecal(obj)
+				count += 1
+				if count % 1000 == 0 then task.wait() end
+			end
+		else
+			-- Khôi phục cả những Texture/Decal đã rời Workspace hoặc trở thành vật cầm tay.
+			for obj, oldTransparency in pairs(Backup.OriginalTextures) do
+				if revision ~= Backup.FlatMaterial.RemoveTexturesRevision or Config.RemoveTextures then return end
+				if obj and (obj:IsA("Texture") or obj:IsA("Decal")) then
+					pcall(function() obj.Transparency = oldTransparency end)
 				end
+				Backup.OriginalTextures[obj] = nil
 			end
 		end
-		if Held.Refresh then Held.Refresh() end
+		if revision == Backup.FlatMaterial.RemoveTexturesRevision and Held.Refresh then Held.Refresh() end
 	end)
 	QueueAutoSave()
 end
@@ -1470,6 +1608,12 @@ do
 
 	local function Apply(part)
 		if not IsRunning or not Wanted() or not part or not part:IsA("BasePart") or not part.Parent then return end
+		-- Lucky/TNT/KeepTexture được bảo vệ khỏi cả hai tùy chọn.
+		local protectedTexture = isLucky(part) or Backup.FlatMaterial.ShouldKeepTexture(part)
+		if protectedTexture then
+			State[part] = "skipped"
+			return
+		end
 		if State[part] then return end
 		local epoch = Epoch
 		State[part] = "pending"
@@ -1485,7 +1629,15 @@ do
 
 		if Config.FlatPlastic then
 			pcall(function()
-				part.Material = Enum.Material.SmoothPlastic
+				local variantName = part.MaterialVariant
+				if variantName ~= "" then
+					if not Backup.FlatMaterial.ApplyVariant(part) then
+						part.MaterialVariant = ""
+						part.Material = Enum.Material.SmoothPlastic
+					end
+				else
+					part.Material = Enum.Material.SmoothPlastic
+				end
 				part.Reflectance = 0
 			end)
 		end
@@ -4294,19 +4446,18 @@ Connect(workspace.DescendantAdded, function(v)
 				v.Enabled = (Config.FxScale > 0) and Backup.OriginalFx[v].Enabled
 			end
 		end
-		if Config.RemoveTextures and (v:IsA("Texture") or v:IsA("Decal")) and not isLucky(v) and not Held.IsHeld(v) then
-			if Backup.OriginalTextures[v] == nil then Backup.OriginalTextures[v] = v.Transparency end
-			v.Transparency = 1
+		if Config.RemoveTextures and (v:IsA("Texture") or v:IsA("Decal")) then
+			Backup.FlatMaterial.HideTextureOrDecal(v)
 		end
 		if Config.RemoveShadows and v:IsA("BasePart") then
 			if Backup.OriginalShadows[v] == nil then Backup.OriginalShadows[v] = v.CastShadow end
 			v.CastShadow = false
 		end
 		if Config.FlatPlastic and v:IsA("BasePart") then
-			ApplyFlatPlasticPart(v)
+			Backup.FlatMaterial.ApplyPart(v)
 
 			task.delay(0.25, function()
-				if IsRunning and Config.FlatPlastic and v and v.Parent then ApplyFlatPlasticPart(v) end
+				if IsRunning and Config.FlatPlastic and v and v.Parent then Backup.FlatMaterial.ApplyPart(v) end
 			end)
 		end
 		if Config.FlatHair then ApplyFlatHairObject(v) end
@@ -4317,9 +4468,23 @@ end)
 
 Connect(MaterialService.DescendantAdded, function(v)
 	if not v:IsA("MaterialVariant") then return end
+	table.clear(Backup.FlatMaterial.VariantLookupCache)
+	if Backup.FlatMaterial.IsGeneratedVariant(v) then return end
 	task.defer(function()
-		if IsRunning and Config.FlatPlastic and v and v.Parent then ApplyFlatMaterialVariant(v) end
+		if not IsRunning or not v or not v.Parent then return end
+		if Config.FlatPlastic then
+			Backup.FlatMaterial.ApplyPass(Backup.FlatMaterial.Revision)
+		end
+		if (Config.FlatPlastic or Config.RemoveTextures) and Held.Refresh then
+			Held.Refresh()
+		end
 	end)
+end)
+
+Connect(MaterialService.DescendantRemoving, function(v)
+	if v:IsA("MaterialVariant") then
+		table.clear(Backup.FlatMaterial.VariantLookupCache)
+	end
 end)
 
 local function SafeApplySaved(label, callback)
